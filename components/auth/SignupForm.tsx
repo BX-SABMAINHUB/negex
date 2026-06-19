@@ -61,8 +61,13 @@ export const SignupForm = () => {
 
   const checkUsername = async (username: string) => {
     if (username.length < 3) { setUsernameAvailable(null); return; }
-    const exists = await getUserByUsername(username);
-    setUsernameAvailable(!exists);
+    try {
+      const exists = await getUserByUsername(username);
+      setUsernameAvailable(!exists);
+    } catch (error) {
+      console.error('Error al verificar nombre de usuario:', error);
+      setUsernameAvailable(null);
+    }
   };
 
   const onSubmit = async (data: FormData) => {
@@ -71,9 +76,38 @@ export const SignupForm = () => {
       const uname = data.username || data.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_');
       await signup(data.email, data.password, uname);
       toast.success('¡Cuenta creada con éxito!');
-      router.push(`/plantillas`);
+      // Pequeña espera para que la sesión se propague antes de redirigir
+      setTimeout(() => {
+        router.push(`/plantillas`);
+      }, 500);
     } catch (err: any) {
-      toast.error(err.code === 'auth/email-already-in-use' ? 'Este correo ya está registrado' : 'Error al crear cuenta');
+      console.error('Error en registro:', err);
+      let msg = 'Error al crear cuenta';
+      if (err.code) {
+        switch (err.code) {
+          case 'auth/email-already-in-use':
+            msg = 'Este correo ya está registrado';
+            break;
+          case 'auth/weak-password':
+            msg = 'La contraseña es demasiado débil';
+            break;
+          case 'auth/invalid-email':
+            msg = 'Correo electrónico no válido';
+            break;
+          case 'auth/operation-not-allowed':
+            msg = 'El registro con correo/contraseña no está habilitado';
+            break;
+          case 'permission-denied':
+          case 'PERMISSION_DENIED':
+            msg = 'Error de permisos en la base de datos. Contacta al administrador.';
+            break;
+          default:
+            msg = err.message || msg;
+        }
+      } else if (err.message) {
+        msg = err.message;
+      }
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -140,8 +174,15 @@ export const SignupForm = () => {
       </div>
 
       <Button type="submit" variant="gradient" className="w-full" disabled={loading}>
-        {loading ? 'Creando cuenta...' : 'Crear cuenta'}
-        <ArrowRight className="ml-2 h-4 w-4" />
+        {loading ? (
+          <>
+            <span className="animate-spin mr-2">⏳</span> Creando cuenta...
+          </>
+        ) : (
+          <>
+            Crear cuenta <ArrowRight className="ml-2 h-4 w-4" />
+          </>
+        )}
       </Button>
     </motion.form>
   );
