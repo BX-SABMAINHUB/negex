@@ -60,15 +60,11 @@ export const SignupForm = () => {
   const strengthScore = Object.values(strength).filter(Boolean).length;
 
   const checkUsername = async (username: string) => {
-    if (username.length < 3) {
-      setUsernameAvailable(null);
-      return;
-    }
+    if (username.length < 3) { setUsernameAvailable(null); return; }
     try {
       const exists = await getUserByUsername(username);
       setUsernameAvailable(!exists);
-    } catch (error) {
-      console.error('Error al verificar nombre de usuario:', error);
+    } catch {
       setUsernameAvailable(null);
     }
   };
@@ -78,34 +74,19 @@ export const SignupForm = () => {
     try {
       const uname = data.username || data.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_');
       await signup(data.email, data.password, uname);
-      toast.success('¡Cuenta creada con éxito! Redirigiendo...');
-      // Pequeña pausa para que el usuario vea el mensaje y luego redirigir
-      setTimeout(() => {
-        router.push('/plantillas');
-      }, 1500);
+      toast.success('¡Cuenta creada con éxito!');
+      // Redirigir a la raíz; el layout autenticado llevará al dashboard
+      router.push('/');
     } catch (err: any) {
-      console.error('Error en registro:', err);
       let msg = 'Error al crear cuenta';
       if (err.code) {
         switch (err.code) {
-          case 'auth/email-already-in-use':
-            msg = 'Este correo ya está registrado';
-            break;
-          case 'auth/weak-password':
-            msg = 'La contraseña es demasiado débil';
-            break;
-          case 'auth/invalid-email':
-            msg = 'Correo electrónico no válido';
-            break;
-          case 'auth/operation-not-allowed':
-            msg = 'El registro con correo/contraseña no está habilitado en Firebase';
-            break;
-          case 'permission-denied':
-          case 'PERMISSION_DENIED':
-            msg = 'Error de permisos en la base de datos. Contacta al administrador.';
-            break;
-          default:
-            msg = err.message || msg;
+          case 'auth/email-already-in-use': msg = 'Este correo ya está registrado'; break;
+          case 'auth/weak-password': msg = 'La contraseña es demasiado débil'; break;
+          case 'auth/invalid-email': msg = 'Correo electrónico no válido'; break;
+          case 'auth/operation-not-allowed': msg = 'El registro con correo/contraseña no está habilitado en Firebase'; break;
+          case 'permission-denied': case 'PERMISSION_DENIED': msg = 'Error de permisos en la base de datos'; break;
+          default: msg = err.message || msg;
         }
       } else if (err.message) {
         msg = err.message;
