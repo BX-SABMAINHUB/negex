@@ -4,7 +4,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
 import { ChartData } from '@/types';
 
 interface Props {
@@ -38,7 +37,11 @@ export const ChartModal = ({ onInsert, onClose }: Props) => {
         <div className="space-y-4">
           <div>
             <Label>Tipo de gráfico</Label>
-            <select value={type} onChange={e => setType(e.target.value as any)} className="w-full h-10 rounded border px-3 text-sm bg-background">
+            <select
+              value={type}
+              onChange={e => setType(e.target.value as any)}
+              className="w-full h-10 rounded border px-3 text-sm bg-background"
+            >
               <option value="bar">Barras</option>
               <option value="line">Líneas</option>
               <option value="pie">Circular</option>
@@ -54,7 +57,9 @@ export const ChartModal = ({ onInsert, onClose }: Props) => {
             <Label>Valores (separados por coma)</Label>
             <Input value={values} onChange={e => setValues(e.target.value)} />
           </div>
-          <Button onClick={handleInsert} variant="gradient" className="w-full">Insertar gráfico</Button>
+          <Button onClick={handleInsert} variant="gradient" className="w-full">
+            Insertar gráfico
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
