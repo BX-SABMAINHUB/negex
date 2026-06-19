@@ -2,22 +2,21 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 
-export default function HomePage() {
-  const { user, userData, loading } = useAuth();
+export default function RootPage() {
+  const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (loading) return; // esperar a que se resuelva la autenticación
+    if (loading) return; // espera silenciosa
     if (user) {
-      // Si tenemos datos de usuario (incluso el de respaldo), redirigir al dashboard
-      const username = userData?.username || user.email?.split('@')[0] || 'usuario';
-      router.push(`/${username}/plantillas`);
+      // Si ya hay sesión, ir al Dashboard personal
+      router.push(`/${user.displayName || 'usuario'}`);
     } else {
       router.push('/login');
     }
-  }, [user, userData, loading, router]);
+  }, [user, loading, router]);
 
-  return <LoadingSpinner />;
+  // Mientras se verifica la sesión no mostramos nada (pantalla en blanco), así se siente instantáneo
+  return null;
 }
