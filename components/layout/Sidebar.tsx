@@ -2,7 +2,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Home, FolderOpen, Grid3X3, Trash2, Settings, ChevronDown, ChevronRight, LayoutVertical, LayoutHorizontal, BarChart3, Table2, MoreHorizontal } from 'lucide-react';
+import {
+  Home, FolderOpen, Grid3X3, Trash2, Settings,
+  ChevronDown, ChevronRight, PanelTop, PanelLeft,
+  BarChart3, Table2, MoreHorizontal
+} from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -15,8 +19,8 @@ const navItems = [
 
 const templateCategories = [
   { href: '/plantillas', icon: Grid3X3, label: 'Todas' },
-  { href: '/plantillas/vertical', icon: LayoutVertical, label: 'Verticales' },
-  { href: '/plantillas/horizontal', icon: LayoutHorizontal, label: 'Horizontales' },
+  { href: '/plantillas/vertical', icon: PanelTop, label: 'Verticales' },
+  { href: '/plantillas/horizontal', icon: PanelLeft, label: 'Horizontales' },
   { href: '/plantillas/graficas', icon: BarChart3, label: 'Con gráficas' },
   { href: '/plantillas/tablas', icon: Table2, label: 'Con tablas' },
   { href: '/plantillas/otros', icon: MoreHorizontal, label: 'Otros estilos' },
