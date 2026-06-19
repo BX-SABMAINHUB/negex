@@ -38,3 +38,10 @@ export interface ChartData {
     borderColor?: string[];
   }[];
 }
+
+export interface TableData {
+  rows: number;
+  cols: number;
+  cells: string[][];
+  formulas: string[][];
+}
