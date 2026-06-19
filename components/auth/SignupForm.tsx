@@ -60,7 +60,10 @@ export const SignupForm = () => {
   const strengthScore = Object.values(strength).filter(Boolean).length;
 
   const checkUsername = async (username: string) => {
-    if (username.length < 3) { setUsernameAvailable(null); return; }
+    if (username.length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
     try {
       const exists = await getUserByUsername(username);
       setUsernameAvailable(!exists);
@@ -75,11 +78,11 @@ export const SignupForm = () => {
     try {
       const uname = data.username || data.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_');
       await signup(data.email, data.password, uname);
-      toast.success('¡Cuenta creada con éxito!');
-      // Pequeña espera para que la sesión se propague antes de redirigir
+      toast.success('¡Cuenta creada con éxito! Redirigiendo...');
+      // Pequeña pausa para que el usuario vea el mensaje y luego redirigir
       setTimeout(() => {
-        router.push(`/plantillas`);
-      }, 500);
+        router.push('/plantillas');
+      }, 1500);
     } catch (err: any) {
       console.error('Error en registro:', err);
       let msg = 'Error al crear cuenta';
@@ -95,7 +98,7 @@ export const SignupForm = () => {
             msg = 'Correo electrónico no válido';
             break;
           case 'auth/operation-not-allowed':
-            msg = 'El registro con correo/contraseña no está habilitado';
+            msg = 'El registro con correo/contraseña no está habilitado en Firebase';
             break;
           case 'permission-denied':
           case 'PERMISSION_DENIED':
@@ -175,13 +178,17 @@ export const SignupForm = () => {
 
       <Button type="submit" variant="gradient" className="w-full" disabled={loading}>
         {loading ? (
-          <>
-            <span className="animate-spin mr-2">⏳</span> Creando cuenta...
-          </>
+          <span className="flex items-center justify-center">
+            <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Creando cuenta...
+          </span>
         ) : (
-          <>
+          <span className="flex items-center">
             Crear cuenta <ArrowRight className="ml-2 h-4 w-4" />
-          </>
+          </span>
         )}
       </Button>
     </motion.form>
