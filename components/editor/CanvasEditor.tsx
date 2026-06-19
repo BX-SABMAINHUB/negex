@@ -250,8 +250,8 @@ export const CanvasEditor = ({
         onZoomChange={(z) => {
           const canvas = fabricRef.current;
           if (canvas) {
-            const center = canvas.getCenter();  // ✅ CORREGIDO: getCenter() en lugar de getCenterPoint()
-            canvas.zoomToPoint(center, z / 100);
+            const c = canvas.getCenter();
+            canvas.zoomToPoint({ x: c.left, y: c.top }, z / 100);
             setZoom(z);
           }
         }}
