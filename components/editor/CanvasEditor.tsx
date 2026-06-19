@@ -179,17 +179,18 @@ export const CanvasEditor = ({
     canvas.renderAll();
   };
 
+  // CORRECCIÓN DEFINITIVA: uso correcto de fabric.Image.fromURL en v5
   const addImageFromURL = (url: string) => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    fabric.Image.fromURL(url, { crossOrigin: 'anonymous' }, (img: fabric.Image) => {
+    fabric.Image.fromURL(url, (img: fabric.Image) => {
       img.scaleToWidth(300);
       img.set({ left: canvas.width! / 2 - 150, top: canvas.height! / 2 - 150 });
       canvas.add(img);
       canvas.setActiveObject(img);
       pushState(JSON.stringify(canvas.toJSON()));
       canvas.renderAll();
-    }, undefined, () => toast.error('Error al cargar imagen'));
+    }, { crossOrigin: 'anonymous' });
   };
 
   const addSymbol = (symbol: string) => {
