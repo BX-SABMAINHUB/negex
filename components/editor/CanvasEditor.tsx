@@ -183,14 +183,14 @@ export const CanvasEditor = ({
   const addImageFromURL = (url: string) => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    fabric.FabricImage.fromURL(url, { crossOrigin: 'anonymous' }).then((img) => {
+    fabric.Image.fromURL(url, { crossOrigin: 'anonymous' }, (img) => {
       img.scaleToWidth(300);
       img.set({ left: canvas.width! / 2 - 150, top: canvas.height! / 2 - 150 });
       canvas.add(img);
       canvas.setActiveObject(img);
       pushState(JSON.stringify(canvas.toJSON()));
       canvas.renderAll();
-    }).catch(() => toast.error('Error al cargar imagen'));
+    }, undefined, () => toast.error('Error al cargar imagen'));
   };
 
   const addSymbol = (symbol: string) => {
