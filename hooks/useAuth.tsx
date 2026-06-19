@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 import { User } from 'firebase/auth';
 import { onAuthChange, logOut, logIn, signUp, resetPassword } from '@/lib/auth';
 import { getUserByUid, createUser } from '@/lib/firestore';
@@ -36,21 +36,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Refrescar userData cuando el usuario cambie
   useEffect(() => {
     const unsub = onAuthChange(async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
         try {
           const data = await getUserByUid(firebaseUser.uid);
-          if (data) {
-            setUserData(data as UserData);
-          } else {
-            // Si no existe documento en Firestore, usamos un usuario temporal
-            setUserData(buildFallbackUser(firebaseUser));
-          }
+          setUserData(data ? (data as UserData) : buildFallbackUser(firebaseUser));
         } catch {
-          // Si falla la consulta, también usamos fallback
           setUserData(buildFallbackUser(firebaseUser));
         }
       } else {
@@ -63,12 +56,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = useCallback(async (email: string, password: string) => {
     await logIn(email, password);
+    // loading se pondrá en false cuando onAuthChange se dispare
   }, []);
 
   const signup = useCallback(async (email: string, password: string, username: string) => {
     // 1. Crear usuario en Auth
     const fbUser = await signUp(email, password, username);
-    // 2. Intentar crear documento en Firestore (sin detener el flujo si falla)
+    // 2. Intentar guardar en Firestore (no bloqueante)
     try {
       await createUser(fbUser.uid, {
         uid: fbUser.uid,
@@ -78,22 +72,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         avatarUrl: '',
       });
     } catch (e) {
-      console.warn('No se pudo guardar el documento en Firestore, usando datos locales', e);
-      // No lanzamos error; el usuario ya está autenticado
+      console.warn('Documento en Firestore no creado, usando datos locales', e);
     }
-    // 3. Forzar la actualización del estado con los datos locales
-    const fallbackData: UserData = {
-      uid: fbUser.uid,
-      email,
-      username,
-      displayName: username,
-      avatarUrl: '',
-      createdAt: new Date() as any,
-      updatedAt: new Date() as any,
-    };
+    // 3. Establecer estado inmediatamente para que la app sepa que ya estamos listos
+    const localData = buildFallbackUser(fbUser);
+    localData.username = username;
+    localData.displayName = username;
     setUser(fbUser);
-    setUserData(fallbackData);
-    setLoading(false);
+    setUserData(localData);
+    setLoading(false);               // <--- aquí se evita el "Cargando..." eterno
   }, []);
 
   const logout = useCallback(async () => {
