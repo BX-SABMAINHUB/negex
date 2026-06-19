@@ -13,3 +13,17 @@ export interface Project {
   updatedAt: any;
   isPublic: boolean;
 }
+
+export type ToolType =
+  | 'select'
+  | 'text'
+  | 'image'
+  | 'shape-rect'
+  | 'shape-circle'
+  | 'shape-triangle'
+  | 'shape-line'
+  | 'shape-star'
+  | 'chart'
+  | 'table'
+  | 'symbol'
+  | 'video';
