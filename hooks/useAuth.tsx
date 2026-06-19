@@ -17,6 +17,12 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
+const withTimeout = <T,>(promise: Promise<T>, ms: number, msg: string): Promise<T> =>
+  Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(msg)), ms)),
+  ]);
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -29,8 +35,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
           const data = await getUserByUid(firebaseUser.uid);
           setUserData(data as UserData | null);
-        } catch (error) {
-          console.error('Error fetching user data:', error);
+        } catch {
           setUserData(null);
         }
       } else {
@@ -42,20 +47,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    await logIn(email, password);
+    await withTimeout(logIn(email, password), 15000, 'Tiempo de espera agotado al iniciar sesión');
   };
 
   const signup = async (email: string, password: string, username: string) => {
-    // Crear usuario en Firebase Auth
-    const fbUser = await signUp(email, password, username);
-    // Crear documento en Firestore (si falla, se lanza excepción y se muestra error)
-    await createUser(fbUser.uid, {
-      uid: fbUser.uid,
-      email,
-      username,
-      displayName: username,
-      avatarUrl: '',
-    });
+    const fbUser = await withTimeout(
+      signUp(email, password, username),
+      15000,
+      'Tiempo de espera agotado al crear la cuenta'
+    );
+    await withTimeout(
+      createUser(fbUser.uid, {
+        uid: fbUser.uid,
+        email,
+        username,
+        displayName: username,
+        avatarUrl: '',
+      }),
+      10000,
+      'No se pudo guardar el perfil en la base de datos'
+    );
   };
 
   const logout = async () => {
