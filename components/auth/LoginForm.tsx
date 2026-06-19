@@ -34,28 +34,16 @@ export const LoginForm = () => {
     try {
       await login(data.email, data.password);
       toast.success('Inicio de sesión exitoso');
-      setTimeout(() => {
-        router.push('/plantillas');
-      }, 800);
+      router.push('/');
     } catch (err: any) {
-      console.error('Error en login:', err);
       let msg = 'Error al iniciar sesión';
       if (err.code) {
         switch (err.code) {
-          case 'auth/user-not-found':
-            msg = 'Usuario no encontrado';
-            break;
-          case 'auth/wrong-password':
-            msg = 'Contraseña incorrecta';
-            break;
-          case 'auth/too-many-requests':
-            msg = 'Demasiados intentos. Espera unos segundos.';
-            break;
-          case 'auth/invalid-credential':
-            msg = 'Credenciales inválidas';
-            break;
-          default:
-            msg = err.message || msg;
+          case 'auth/user-not-found': msg = 'Usuario no encontrado'; break;
+          case 'auth/wrong-password': msg = 'Contraseña incorrecta'; break;
+          case 'auth/too-many-requests': msg = 'Demasiados intentos. Espera unos segundos.'; break;
+          case 'auth/invalid-credential': msg = 'Credenciales inválidas'; break;
+          default: msg = err.message || msg;
         }
       }
       toast.error(msg);
