@@ -10,7 +10,6 @@ import { ChartModal } from './ChartModal';
 import { TableModal } from './TableModal';
 import { ImageSearchModal } from './ImageSearchModal';
 import { ExportModal } from './ExportModal';
-import { SaveButton } from './SaveButton';
 import { ToolType } from '@/types';
 import { toast } from 'sonner';
 
@@ -183,7 +182,7 @@ export const CanvasEditor = ({
   const addImageFromURL = (url: string) => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    fabric.Image.fromURL(url, { crossOrigin: 'anonymous' }, (img) => {
+    fabric.Image.fromURL(url, { crossOrigin: 'anonymous' }, (img: fabric.Image) => {
       img.scaleToWidth(300);
       img.set({ left: canvas.width! / 2 - 150, top: canvas.height! / 2 - 150 });
       canvas.add(img);
