@@ -7,8 +7,10 @@ const nextConfig = {
       { protocol: 'https', hostname: 'plus.unsplash.com' },
     ],
   },
-  webpack: (config) => {
-    config.externals = [...config.externals, { canvas: 'canvas' }];
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = [...config.externals, { canvas: 'canvas', fabric: 'fabric' }];
+    }
     return config;
   },
 };
