@@ -46,23 +46,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signup = async (email: string, password: string, username: string) => {
-    try {
-      const fbUser = await signUp(email, password, username);
-      console.log('Usuario creado en Auth:', fbUser.uid);
-      await createUser(fbUser.uid, {
-        uid: fbUser.uid,
-        email,
-        username,
-        displayName: username,
-        avatarUrl: '',
-      });
-      console.log('Documento de usuario creado en Firestore');
-    } catch (error: any) {
-      console.error('Error en signup:', error);
-      // Si ocurre un error después de crear el usuario en Auth, podríamos eliminarlo,
-      // pero normalmente el fallo en createUser lanza excepción y se maneja en el formulario.
-      throw error; // Re-lanzamos para que el formulario pueda mostrar el mensaje
-    }
+    // Crear usuario en Firebase Auth
+    const fbUser = await signUp(email, password, username);
+    // Crear documento en Firestore (si falla, se lanza excepción y se muestra error)
+    await createUser(fbUser.uid, {
+      uid: fbUser.uid,
+      email,
+      username,
+      displayName: username,
+      avatarUrl: '',
+    });
   };
 
   const logout = async () => {
