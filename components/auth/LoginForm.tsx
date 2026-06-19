@@ -34,13 +34,30 @@ export const LoginForm = () => {
     try {
       await login(data.email, data.password);
       toast.success('Inicio de sesión exitoso');
-      router.push(`/plantillas`);
+      setTimeout(() => {
+        router.push('/plantillas');
+      }, 800);
     } catch (err: any) {
-      const msg =
-        err.code === 'auth/user-not-found' ? 'Usuario no encontrado' :
-        err.code === 'auth/wrong-password' ? 'Contraseña incorrecta' :
-        err.code === 'auth/too-many-requests' ? 'Demasiados intentos. Espera unos segundos.' :
-        'Error al iniciar sesión';
+      console.error('Error en login:', err);
+      let msg = 'Error al iniciar sesión';
+      if (err.code) {
+        switch (err.code) {
+          case 'auth/user-not-found':
+            msg = 'Usuario no encontrado';
+            break;
+          case 'auth/wrong-password':
+            msg = 'Contraseña incorrecta';
+            break;
+          case 'auth/too-many-requests':
+            msg = 'Demasiados intentos. Espera unos segundos.';
+            break;
+          case 'auth/invalid-credential':
+            msg = 'Credenciales inválidas';
+            break;
+          default:
+            msg = err.message || msg;
+        }
+      }
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -77,8 +94,19 @@ export const LoginForm = () => {
       </div>
 
       <Button type="submit" variant="gradient" className="w-full" disabled={loading}>
-        {loading ? 'Iniciando sesión...' : 'Iniciar sesión'}
-        <ArrowRight className="ml-2 h-4 w-4" />
+        {loading ? (
+          <span className="flex items-center justify-center">
+            <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Iniciando sesión...
+          </span>
+        ) : (
+          <span className="flex items-center">
+            Iniciar sesión <ArrowRight className="ml-2 h-4 w-4" />
+          </span>
+        )}
       </Button>
     </motion.form>
   );
