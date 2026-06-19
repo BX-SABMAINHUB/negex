@@ -1,9 +1,14 @@
 import type { Metadata } from 'next';
 import { ThemeProvider } from 'next-themes';
-import { AuthProvider } from '@/hooks/useAuth';
+import dynamic from 'next/dynamic';
 import { Toaster } from '@/components/ui/toaster';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import './globals.css';
+
+const AuthProvider = dynamic(
+  () => import('@/hooks/useAuth').then((mod) => mod.AuthProvider),
+  { ssr: false }
+);
 
 export const metadata: Metadata = {
   title: 'Negex — Diseño y datos fusionados',
