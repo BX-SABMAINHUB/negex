@@ -95,7 +95,7 @@ export const LayersPanel = ({ canvas, onUpdate }: Props) => {
                obj instanceof fabric.Triangle ? 'Triángulo' :
                obj instanceof fabric.Line ? 'Línea' :
                obj instanceof fabric.Polygon ? 'Estrella' :
-               obj instanceof fabric.FabricImage ? 'Imagen' : 'Objeto'}
+               obj instanceof fabric.Image ? 'Imagen' : 'Objeto'}
             </span>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); toggleVisibility(obj); }}>
               {obj.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
