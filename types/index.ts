@@ -14,6 +14,16 @@ export interface Project {
   isPublic: boolean;
 }
 
+export interface Plantilla {
+  id: string;
+  name: string;
+  category: PlantillaCategoria;
+  thumbnailUrl: string;
+  defaultCanvasData: object;
+  description: string;
+  isPremium: boolean;
+}
+
 export type ToolType =
   | 'select'
   | 'text'
@@ -44,4 +54,20 @@ export interface TableData {
   cols: number;
   cells: string[][];
   formulas: string[][];
+}
+
+export interface CanvasObjectStyle {
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  opacity?: number;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  fontStyle?: string;
+  textAlign?: string;
+  lineHeight?: number;
+  underline?: boolean;
+  borderRadius?: number;
+  filter?: string;
 }
