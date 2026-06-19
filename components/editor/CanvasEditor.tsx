@@ -179,7 +179,6 @@ export const CanvasEditor = ({
     canvas.renderAll();
   };
 
-  // CORRECCIÓN DEFINITIVA: uso correcto de fabric.Image.fromURL en v5
   const addImageFromURL = (url: string) => {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -251,7 +250,7 @@ export const CanvasEditor = ({
         onZoomChange={(z) => {
           const canvas = fabricRef.current;
           if (canvas) {
-            const center = canvas.getCenterPoint();
+            const center = canvas.getCenter();  // ✅ CORREGIDO: getCenter() en lugar de getCenterPoint()
             canvas.zoomToPoint(center, z / 100);
             setZoom(z);
           }
