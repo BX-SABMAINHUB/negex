@@ -1,13 +1,18 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/hooks/useAuth';
 import { getProjectById, updateProject } from '@/lib/firestore';
-import { CanvasEditor } from '@/components/editor/CanvasEditor';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Project } from '@/types';
 import { toast } from 'sonner';
 import { uploadImage } from '@/lib/storage';
+
+const CanvasEditor = dynamic(
+  () => import('@/components/editor/CanvasEditor').then(mod => mod.CanvasEditor),
+  { ssr: false }
+);
 
 export default function EditorPage() {
   const params = useParams();
