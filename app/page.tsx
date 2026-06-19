@@ -9,10 +9,12 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (loading) return;
-    if (user && userData?.username) {
-      router.push(`/${userData.username}/plantillas`);
-    } else if (!user) {
+    if (loading) return; // esperar a que se resuelva la autenticación
+    if (user) {
+      // Si tenemos datos de usuario (incluso el de respaldo), redirigir al dashboard
+      const username = userData?.username || user.email?.split('@')[0] || 'usuario';
+      router.push(`/${username}/plantillas`);
+    } else {
       router.push('/login');
     }
   }, [user, userData, loading, router]);
