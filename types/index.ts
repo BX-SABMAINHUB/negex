@@ -71,3 +71,13 @@ export interface CanvasObjectStyle {
   borderRadius?: number;
   filter?: string;
 }
+
+export interface UserData {
+  uid: string;
+  email: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  createdAt: any;
+  updatedAt: any;
+}
