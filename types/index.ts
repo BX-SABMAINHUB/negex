@@ -27,3 +27,14 @@ export type ToolType =
   | 'table'
   | 'symbol'
   | 'video';
+
+export interface ChartData {
+  type: 'bar' | 'line' | 'pie' | 'doughnut' | 'radar';
+  labels: string[];
+  datasets: {
+    label: string;
+    data: number[];
+    backgroundColor?: string[];
+    borderColor?: string[];
+  }[];
+}
