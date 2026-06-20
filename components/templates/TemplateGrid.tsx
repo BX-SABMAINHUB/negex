@@ -6,8 +6,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { createProject } from '@/lib/firestore';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Props {
   templates: Plantilla[];
@@ -17,14 +15,21 @@ interface Props {
 }
 
 export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const router = useRouter();
 
   const handleUse = async (template: Plantilla) => {
-    if (!user) return;
+    if (!user) {
+      toast.error('Debes iniciar sesión para crear un proyecto');
+      return;
+    }
+
     try {
+      // Usamos el username del perfil (siempre existe gracias al fallback)
+      const username = userData?.username || user.email?.split('@')[0] || 'usuario';
+
       const projectId = await createProject(user.uid, {
-        username: user.displayName || 'user',
+        username: username,
         title: `${template.name} - ${new Date().toLocaleDateString()}`,
         plantillaTipo: template.category,
         plantillaId: template.id,
@@ -32,10 +37,14 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
         thumbnailUrl: '',
         isPublic: false,
       });
+
       toast.success('Proyecto creado');
-      router.push(`/${user.displayName}/editor/${projectId}`);
-    } catch {
-      toast.error('Error al crear proyecto');
+      router.push(`/${username}/editor/${projectId}`);
+    } catch (err: any) {
+      console.error('Error al crear proyecto:', err);
+      // Mostrar el mensaje real del error para poder depurarlo
+      const mensaje = err?.message || err?.code || 'Error desconocido';
+      toast.error(`Error al crear proyecto: ${mensaje}`);
     }
   };
 
@@ -56,12 +65,11 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
         <p className="text-lg font-semibold mb-2">{error}</p>
         {onRetry && (
-          <Button variant="outline" onClick={onRetry}>
-            <RefreshCw className="mr-2 h-4 w-4" /> Reintentar
-          </Button>
+          <button onClick={onRetry} className="text-primary hover:underline">
+            Reintentar
+          </button>
         )}
       </div>
     );
@@ -71,12 +79,7 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
         <p className="text-lg font-semibold mb-2">No hay plantillas disponibles</p>
-        <p className="text-sm mb-4">Puede que la colección esté vacía. Ejecuta el seed o añade plantillas manualmente.</p>
-        {onRetry && (
-          <Button variant="outline" onClick={onRetry}>
-            <RefreshCw className="mr-2 h-4 w-4" /> Reintentar
-          </Button>
-        )}
+        <p className="text-sm">Crea una nueva con el botón + o importa plantillas en Firestore.</p>
       </div>
     );
   }
