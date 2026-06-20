@@ -6,13 +6,17 @@ import { useAuth } from '@/hooks/useAuth';
 import { createProject } from '@/lib/firestore';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Props {
   templates: Plantilla[];
   loading: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
-export const TemplateGrid = ({ templates, loading }: Props) => {
+export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
   const { user } = useAuth();
   const router = useRouter();
 
@@ -29,7 +33,7 @@ export const TemplateGrid = ({ templates, loading }: Props) => {
         isPublic: false,
       });
       toast.success('Proyecto creado');
-      router.push(`/editor/${projectId}`);
+      router.push(`/${user.displayName}/editor/${projectId}`);
     } catch {
       toast.error('Error al crear proyecto');
     }
@@ -45,6 +49,34 @@ export const TemplateGrid = ({ templates, loading }: Props) => {
             <Skeleton className="h-9 w-full" />
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <p className="text-lg font-semibold mb-2">{error}</p>
+        {onRetry && (
+          <Button variant="outline" onClick={onRetry}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Reintentar
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (templates.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+        <p className="text-lg font-semibold mb-2">No hay plantillas disponibles</p>
+        <p className="text-sm mb-4">Puede que la colección esté vacía. Ejecuta el seed o añade plantillas manualmente.</p>
+        {onRetry && (
+          <Button variant="outline" onClick={onRetry}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Reintentar
+          </Button>
+        )}
       </div>
     );
   }
