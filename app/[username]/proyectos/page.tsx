@@ -4,8 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
-import { formatDistanceToNow } from 'date-fns'; // opcional, o usar any
-import { es } from 'date-fns/locale'; // opcional
 
 export default function ProyectosPage() {
   const { projects, loading } = useProjects();
@@ -31,7 +29,7 @@ export default function ProyectosPage() {
               <CardHeader>
                 <CardTitle className="text-lg">{project.title}</CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Creado {project.createdAt?.toDate ? formatDistanceToNow(project.createdAt.toDate(), { addSuffix: true, locale: es }) : 'hace poco'}
+                  Actualizado {project.updatedAt?.toDate().toLocaleDateString() || 'recientemente'}
                 </p>
               </CardHeader>
               <CardContent>
