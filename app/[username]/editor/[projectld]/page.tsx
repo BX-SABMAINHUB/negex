@@ -10,7 +10,7 @@ import { Project } from '@/types';
 import { toast } from 'sonner';
 import { uploadImage } from '@/lib/storage';
 
-// Carga dinámica del editor (solo cliente, sin SSR)
+// Editor solo en cliente
 const CanvasEditor = dynamic(
   () => import('@/components/editor/CanvasEditor').then(mod => mod.CanvasEditor),
   { ssr: false }
@@ -24,28 +24,35 @@ export default function EditorPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
 
   const projectId = params.projectId as string;
 
   const fetchProject = useCallback(async () => {
-    if (!user || !projectId) return;
+    // Si no hay usuario, esperar un poco y luego dar error si sigue sin estar
+    if (!user) {
+      // Pequeña espera por si el usuario está en proceso de login
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (!user) {
+        setError('No se ha podido autenticar. Vuelve a iniciar sesión.');
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Intentar cargar el proyecto con un timeout de seguridad (10 segundos máximo)
+    const timeout = new Promise<Project | null>((_, reject) =>
+      setTimeout(() => reject(new Error('Tiempo de espera agotado')), 10000)
+    );
 
     try {
-      const data = await getProjectById(projectId);
+      const data = await Promise.race([getProjectById(projectId), timeout]);
 
       if (!data) {
-        // Documento no encontrado → si llevamos pocos reintentos, volvemos a intentar
-        if (retryCount < 3) {
-          setRetryCount(prev => prev + 1);
-          setTimeout(() => fetchProject(), 800);
-          return;
-        }
         setError('El proyecto no existe o fue eliminado.');
         return;
       }
 
-      if (data.userId !== user.uid && !data.isPublic) {
+      if (data.userId !== user!.uid && !data.isPublic) {
         setError('No tienes permiso para acceder a este proyecto.');
         return;
       }
@@ -54,30 +61,20 @@ export default function EditorPage() {
       setProject(data);
       setError(null);
     } catch (err: any) {
-      console.error('Error al obtener proyecto:', err);
-      // Reintentar en caso de error de red o Firestore
-      if (retryCount < 3) {
-        setRetryCount(prev => prev + 1);
-        setTimeout(() => fetchProject(), 800);
-        return;
-      }
+      console.error('Error al cargar proyecto:', err);
       setError(
-        err?.message === 'permission-denied'
+        err.message === 'permission-denied'
           ? 'Error de permisos en la base de datos.'
           : 'Error al cargar el proyecto. Por favor, inténtalo de nuevo.'
       );
     } finally {
       setLoading(false);
     }
-  }, [user, projectId, retryCount]);
+  }, [user, projectId]);
 
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
     fetchProject();
-  }, [user, fetchProject]);
+  }, [fetchProject]);
 
   // Guardar cambios
   const handleSave = async (canvasData: object, thumbnail: string) => {
@@ -106,29 +103,41 @@ export default function EditorPage() {
     }
   };
 
-  // Mostrar spinner mientras carga
-  if (loading) return <LoadingSpinner />;
+  // Renderizado condicional
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <LoadingSpinner />
+      </div>
+    );
+  }
 
-  // Mostrar error si existe
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center space-y-4 max-w-md">
           <h2 className="text-2xl font-bold text-destructive">Error</h2>
           <p className="text-muted-foreground">{error}</p>
-          <button
-            onClick={() => router.push('/')}
-            className="text-primary hover:underline"
-          >
-            Volver al inicio
-          </button>
+          <div className="flex gap-2 justify-center">
+            <button
+              onClick={() => router.push('/')}
+              className="text-primary hover:underline"
+            >
+              Volver al inicio
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="text-primary hover:underline"
+            >
+              Reintentar
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Si no hay proyecto ni error, no mostramos nada (no debería ocurrir)
-  if (!project) return null;
+  if (!project) return null; // Seguridad
 
   // Dimensiones según tipo de plantilla
   const sizeMap: Record<string, { w: number; h: number }> = {
