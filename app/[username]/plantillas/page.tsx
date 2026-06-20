@@ -4,12 +4,12 @@ import { TemplateGrid } from '@/components/templates/TemplateGrid';
 import { CategoryTabs } from '@/components/templates/CategoryTabs';
 
 export default function PlantillasPage() {
-  const { templates, loading } = useTemplates();
+  const { templates, loading, error, refetch } = useTemplates();
 
   return (
     <div className="space-y-6">
       <CategoryTabs />
-      <TemplateGrid templates={templates} loading={loading} />
+      <TemplateGrid templates={templates} loading={loading} error={error} onRetry={refetch} />
     </div>
   );
 }
