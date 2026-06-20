@@ -6,6 +6,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { createProject } from '@/lib/firestore';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Props {
   templates: Plantilla[];
@@ -25,26 +27,32 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
     }
 
     try {
-      // Usamos el username del perfil (siempre existe gracias al fallback)
       const username = userData?.username || user.email?.split('@')[0] || 'usuario';
+
+      // Asegura que el canvasData sea un objeto válido
+      let canvasData = template.defaultCanvasData;
+      if (!canvasData || typeof canvasData !== 'object') {
+        canvasData = { version: '5.3.0', objects: [] };
+      }
 
       const projectId = await createProject(user.uid, {
         username: username,
         title: `${template.name} - ${new Date().toLocaleDateString()}`,
         plantillaTipo: template.category,
         plantillaId: template.id,
-        canvasData: template.defaultCanvasData,
+        canvasData: canvasData,
         thumbnailUrl: '',
         isPublic: false,
       });
 
       toast.success('Proyecto creado');
-      router.push(`/${username}/editor/${projectId}`);
+      // Breve pausa para asegurar que Firestore propague los datos
+      setTimeout(() => {
+        router.push(`/${username}/editor/${projectId}`);
+      }, 500);
     } catch (err: any) {
       console.error('Error al crear proyecto:', err);
-      // Mostrar el mensaje real del error para poder depurarlo
-      const mensaje = err?.message || err?.code || 'Error desconocido';
-      toast.error(`Error al crear proyecto: ${mensaje}`);
+      toast.error(`Error al crear proyecto: ${err?.message || err?.code || 'Error desconocido'}`);
     }
   };
 
@@ -65,11 +73,12 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
         <p className="text-lg font-semibold mb-2">{error}</p>
         {onRetry && (
-          <button onClick={onRetry} className="text-primary hover:underline">
-            Reintentar
-          </button>
+          <Button variant="outline" onClick={onRetry}>
+            <RefreshCw className="mr-2 h-4 w-4" /> Reintentar
+          </Button>
         )}
       </div>
     );
