@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,6 +10,7 @@ import { Project } from '@/types';
 import { toast } from 'sonner';
 import { uploadImage } from '@/lib/storage';
 
+// Carga dinámica del editor (solo cliente, sin SSR)
 const CanvasEditor = dynamic(
   () => import('@/components/editor/CanvasEditor').then(mod => mod.CanvasEditor),
   { ssr: false }
@@ -18,42 +20,66 @@ export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
+
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const projectId = params.projectId as string;
+
+  const fetchProject = useCallback(async () => {
+    if (!user || !projectId) return;
+
+    try {
+      const data = await getProjectById(projectId);
+
+      if (!data) {
+        // Documento no encontrado → si llevamos pocos reintentos, volvemos a intentar
+        if (retryCount < 3) {
+          setRetryCount(prev => prev + 1);
+          setTimeout(() => fetchProject(), 800);
+          return;
+        }
+        setError('El proyecto no existe o fue eliminado.');
+        return;
+      }
+
+      if (data.userId !== user.uid && !data.isPublic) {
+        setError('No tienes permiso para acceder a este proyecto.');
+        return;
+      }
+
+      // Éxito
+      setProject(data);
+      setError(null);
+    } catch (err: any) {
+      console.error('Error al obtener proyecto:', err);
+      // Reintentar en caso de error de red o Firestore
+      if (retryCount < 3) {
+        setRetryCount(prev => prev + 1);
+        setTimeout(() => fetchProject(), 800);
+        return;
+      }
+      setError(
+        err?.message === 'permission-denied'
+          ? 'Error de permisos en la base de datos.'
+          : 'Error al cargar el proyecto. Por favor, inténtalo de nuevo.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [user, projectId, retryCount]);
 
   useEffect(() => {
     if (!user) {
       setLoading(false);
       return;
     }
-
-    const fetchProject = async () => {
-      try {
-        const projectId = params.projectId as string;
-        const data = await getProjectById(projectId);
-
-        if (!data) {
-          setError('El proyecto no existe.');
-          return;
-        }
-        if (data.userId !== user.uid && !data.isPublic) {
-          setError('No tienes permiso para acceder a este proyecto.');
-          return;
-        }
-
-        setProject(data);
-      } catch (err: any) {
-        console.error('Error al cargar proyecto:', err);
-        setError('Error al cargar el proyecto. Por favor, inténtalo de nuevo.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchProject();
-  }, [params.projectId, user]);
+  }, [user, fetchProject]);
 
+  // Guardar cambios
   const handleSave = async (canvasData: object, thumbnail: string) => {
     if (!project) return;
     try {
@@ -61,29 +87,34 @@ export default function EditorPage() {
       const file = new File([blob], `thumb_${project.id}.png`, { type: 'image/png' });
       const thumbUrl = await uploadImage(file, `thumbnails/${project.id}/${Date.now()}.png`);
       await updateProject(project.id, { canvasData, thumbnailUrl: thumbUrl } as any);
+      toast.success('Proyecto guardado');
     } catch (err) {
       console.error('Error al guardar:', err);
       toast.error('No se pudo guardar el proyecto');
     }
   };
 
+  // Cambiar título
   const handleTitleChange = async (title: string) => {
     if (!project) return;
-    setProject(prev => prev ? { ...prev, title } : null);
+    setProject(prev => (prev ? { ...prev, title } : null));
     try {
       await updateProject(project.id, { title } as any);
     } catch (err) {
-      console.error('Error al cambiar título:', err);
+      console.error('Error al actualizar título:', err);
       toast.error('No se pudo actualizar el título');
     }
   };
 
+  // Mostrar spinner mientras carga
   if (loading) return <LoadingSpinner />;
+
+  // Mostrar error si existe
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center space-y-4 max-w-md">
-          <h2 className="text-2xl font-bold">Error</h2>
+          <h2 className="text-2xl font-bold text-destructive">Error</h2>
           <p className="text-muted-foreground">{error}</p>
           <button
             onClick={() => router.push('/')}
@@ -95,8 +126,11 @@ export default function EditorPage() {
       </div>
     );
   }
+
+  // Si no hay proyecto ni error, no mostramos nada (no debería ocurrir)
   if (!project) return null;
 
+  // Dimensiones según tipo de plantilla
   const sizeMap: Record<string, { w: number; h: number }> = {
     vertical: { w: 1080, h: 1920 },
     horizontal: { w: 1920, h: 1080 },
