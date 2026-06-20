@@ -30,12 +30,10 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
       const username = userData?.username || user.email?.split('@')[0] || 'usuario';
 
       // Asegurar que el canvasData es válido (si no, lienzo vacío)
+      const raw = template.defaultCanvasData as any;
       const canvasData =
-        template.defaultCanvasData &&
-        typeof template.defaultCanvasData === 'object' &&
-        template.defaultCanvasData.version &&
-        Array.isArray(template.defaultCanvasData.objects)
-          ? template.defaultCanvasData
+        raw && typeof raw === 'object' && raw.version && Array.isArray(raw.objects)
+          ? raw
           : { version: '5.3.0', objects: [], background: '#ffffff' };
 
       const projectId = await createProject(user.uid, {
