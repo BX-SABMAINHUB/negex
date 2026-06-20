@@ -29,11 +29,14 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
     try {
       const username = userData?.username || user.email?.split('@')[0] || 'usuario';
 
-      // Asegura que el canvasData sea un objeto válido
-      let canvasData = template.defaultCanvasData;
-      if (!canvasData || typeof canvasData !== 'object') {
-        canvasData = { version: '5.3.0', objects: [] };
-      }
+      // Asegurar que el canvasData es válido (si no, lienzo vacío)
+      const canvasData =
+        template.defaultCanvasData &&
+        typeof template.defaultCanvasData === 'object' &&
+        template.defaultCanvasData.version &&
+        Array.isArray(template.defaultCanvasData.objects)
+          ? template.defaultCanvasData
+          : { version: '5.3.0', objects: [], background: '#ffffff' };
 
       const projectId = await createProject(user.uid, {
         username: username,
@@ -46,7 +49,6 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
       });
 
       toast.success('Proyecto creado');
-      // Breve pausa para asegurar que Firestore propague los datos
       setTimeout(() => {
         router.push(`/${username}/editor/${projectId}`);
       }, 500);
