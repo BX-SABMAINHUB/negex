@@ -55,3 +55,25 @@ export const getProjectById = async (projectId: string): Promise<Project | null>
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() } as Project;
 };
+
+// 🌟 Nueva función para crear una plantilla desde el panel de administración
+export const createPlantilla = async (data: {
+  name: string;
+  category?: string;
+  description?: string;
+  isPremium?: boolean;
+  thumbnailUrl?: string;
+  defaultCanvasData: any;
+}) => {
+  const docRef = await addDoc(collection(db, 'plantillas'), {
+    name: data.name,
+    category: data.category || 'vertical',
+    description: data.description || '',
+    isPremium: data.isPremium || false,
+    thumbnailUrl: data.thumbnailUrl || '/templates/placeholder.svg',
+    defaultCanvasData: data.defaultCanvasData,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return docRef.id;
+};
