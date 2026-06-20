@@ -20,25 +20,35 @@ export default function EditorPage() {
   const { user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProject = async () => {
       try {
-        const data = await getProjectById(params.projectId as string);
-        if (!data || (data.userId !== user?.uid && !data.isPublic)) {
-          toast.error('Proyecto no encontrado o sin acceso');
-          router.push('/plantillas');
+        const projectId = params.projectId as string;
+        console.log('Intentando cargar proyecto con ID:', projectId);
+        const data = await getProjectById(projectId);
+        console.log('Resultado de getProjectById:', data);
+
+        if (!data) {
+          setError('El proyecto no existe en la base de datos.');
+          return;
+        }
+        if (data.userId !== user?.uid && !data.isPublic) {
+          setError('No tienes permiso para acceder a este proyecto.');
           return;
         }
         setProject(data);
-      } catch {
-        toast.error('Error al cargar proyecto');
-        router.push('/plantillas');
+      } catch (err: any) {
+        console.error('Error al cargar proyecto:', err);
+        setError(err?.message || 'Error desconocido al cargar el proyecto.');
       } finally {
         setLoading(false);
       }
     };
+
     if (user) fetchProject();
+    else setLoading(false);
   }, [params.projectId, user, router]);
 
   const handleSave = async (canvasData: object, thumbnail: string) => {
@@ -56,6 +66,22 @@ export default function EditorPage() {
   };
 
   if (loading) return <LoadingSpinner />;
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-center space-y-4 max-w-md">
+          <h2 className="text-2xl font-bold">Error</h2>
+          <p className="text-muted-foreground">{error}</p>
+          <button
+            onClick={() => router.push('/')}
+            className="text-primary hover:underline"
+          >
+            Volver al inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!project) return null;
 
   const sizeMap: Record<string, { w: number; h: number }> = {
