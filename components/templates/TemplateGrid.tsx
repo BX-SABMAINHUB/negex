@@ -47,9 +47,10 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
       });
 
       toast.success('Proyecto creado');
+      // Aumentamos el retardo a 1.2 segundos para asegurar que Firestore propague el documento
       setTimeout(() => {
         router.push(`/${username}/editor/${projectId}`);
-      }, 500);
+      }, 1200);
     } catch (err: any) {
       console.error('Error al crear proyecto:', err);
       toast.error(`Error al crear proyecto: ${err?.message || err?.code || 'Error desconocido'}`);
