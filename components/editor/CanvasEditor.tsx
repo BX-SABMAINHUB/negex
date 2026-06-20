@@ -14,7 +14,7 @@ import { ToolType } from '@/types';
 import { toast } from 'sonner';
 
 interface CanvasEditorProps {
-  initialData?: object;
+  initialData?: any;
   onSave: (json: object, thumbnail: string) => Promise<void>;
   width?: number;
   height?: number;
@@ -44,80 +44,111 @@ export const CanvasEditor = ({
   const [showImageModal, setShowImageModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fabricError, setFabricError] = useState<string | null>(null);
   const { pushState, undo, redo, canUndo, canRedo } = useCanvasHistory();
+
+  // Limpia y valida los datos iniciales del lienzo
+  const ensureValidCanvasData = (data: any) => {
+    if (!data) return null;
+    if (typeof data === 'string') {
+      try {
+        const parsed = JSON.parse(data);
+        return parsed && parsed.version && Array.isArray(parsed.objects) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+    if (typeof data === 'object' && data.version && Array.isArray(data.objects)) {
+      return data;
+    }
+    return null;
+  };
 
   const initCanvas = useCallback(() => {
     if (!canvasRef.current || fabricRef.current) return;
 
-    const canvas = new fabric.Canvas(canvasRef.current, {
-      width,
-      height,
-      backgroundColor: '#ffffff',
-      preserveObjectStacking: true,
-      selection: true,
-      stopContextMenu: true,
-      fireRightClick: true,
-    });
+    try {
+      const canvas = new fabric.Canvas(canvasRef.current, {
+        width,
+        height,
+        backgroundColor: '#ffffff',
+        preserveObjectStacking: true,
+        selection: true,
+        stopContextMenu: true,
+        fireRightClick: true,
+      });
 
-    fabricRef.current = canvas;
+      fabricRef.current = canvas;
 
-    if (initialData) {
-      canvas.loadFromJSON(initialData, () => {
-        canvas.renderAll();
+      const safeData = ensureValidCanvasData(initialData);
+
+      if (safeData) {
+        try {
+          canvas.loadFromJSON(safeData, () => {
+            canvas.renderAll();
+            pushState(JSON.stringify(canvas.toJSON()));
+          });
+        } catch (loadErr) {
+          console.error('Error al cargar datos iniciales, iniciando vacío:', loadErr);
+          pushState(JSON.stringify(canvas.toJSON()));
+          toast.error('Los datos de la plantilla son inválidos. Se abrirá un lienzo en blanco.');
+        }
+      } else {
+        pushState(JSON.stringify(canvas.toJSON()));
+      }
+
+      canvas.on('selection:created', (e) => setSelectedObject(e.selected?.[0] || null));
+      canvas.on('selection:updated', (e) => setSelectedObject(e.selected?.[0] || null));
+      canvas.on('selection:cleared', () => setSelectedObject(null));
+
+      canvas.on('object:modified', () => {
         pushState(JSON.stringify(canvas.toJSON()));
       });
-    } else {
-      pushState(JSON.stringify(canvas.toJSON()));
+
+      canvas.on('mouse:wheel', (opt) => {
+        const delta = opt.e.deltaY;
+        let newZoom = canvas.getZoom() * (delta > 0 ? 0.95 : 1.05);
+        newZoom = Math.min(Math.max(newZoom, 0.25), 4);
+        canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, newZoom);
+        setZoom(Math.round(newZoom * 100));
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+      });
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+          e.preventDefault();
+          const prevState = undo();
+          if (prevState && canvas) {
+            canvas.loadFromJSON(JSON.parse(prevState), () => canvas.renderAll());
+          }
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+          e.preventDefault();
+          const nextState = redo();
+          if (nextState && canvas) {
+            canvas.loadFromJSON(JSON.parse(nextState), () => canvas.renderAll());
+          }
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+          e.preventDefault();
+          handleSave();
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          const active = canvas?.getActiveObject();
+          if (active) {
+            canvas?.remove(active);
+            pushState(JSON.stringify(canvas?.toJSON()));
+          }
+        }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    } catch (err: any) {
+      console.error('Error al inicializar Fabric canvas:', err);
+      setFabricError(err.message || 'Error desconocido al crear el lienzo');
     }
-
-    canvas.on('selection:created', (e) => setSelectedObject(e.selected?.[0] || null));
-    canvas.on('selection:updated', (e) => setSelectedObject(e.selected?.[0] || null));
-    canvas.on('selection:cleared', () => setSelectedObject(null));
-
-    canvas.on('object:modified', () => {
-      pushState(JSON.stringify(canvas.toJSON()));
-    });
-
-    canvas.on('mouse:wheel', (opt) => {
-      const delta = opt.e.deltaY;
-      let newZoom = canvas.getZoom() * (delta > 0 ? 0.95 : 1.05);
-      newZoom = Math.min(Math.max(newZoom, 0.25), 4);
-      canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, newZoom);
-      setZoom(Math.round(newZoom * 100));
-      opt.e.preventDefault();
-      opt.e.stopPropagation();
-    });
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        const prevState = undo();
-        if (prevState && canvas) {
-          canvas.loadFromJSON(JSON.parse(prevState), () => canvas.renderAll());
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        e.preventDefault();
-        const nextState = redo();
-        if (nextState && canvas) {
-          canvas.loadFromJSON(JSON.parse(nextState), () => canvas.renderAll());
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        handleSave();
-      }
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        const active = canvas?.getActiveObject();
-        if (active) {
-          canvas?.remove(active);
-          pushState(JSON.stringify(canvas?.toJSON()));
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [width, height, initialData, pushState, undo, redo]);
 
   useEffect(() => {
@@ -240,6 +271,20 @@ export const CanvasEditor = ({
       fabricRef.current?.renderAll();
     }
   };
+
+  if (fabricError) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold">Error en el editor</h2>
+          <p className="text-muted-foreground">{fabricError}</p>
+          <button onClick={() => window.location.reload()} className="text-primary hover:underline">
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col bg-slate-100 dark:bg-slate-950">
