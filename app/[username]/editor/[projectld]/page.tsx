@@ -23,46 +23,59 @@ export default function EditorPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
     const fetchProject = async () => {
       try {
         const projectId = params.projectId as string;
-        console.log('Intentando cargar proyecto con ID:', projectId);
         const data = await getProjectById(projectId);
-        console.log('Resultado de getProjectById:', data);
 
         if (!data) {
-          setError('El proyecto no existe en la base de datos.');
+          setError('El proyecto no existe.');
           return;
         }
-        if (data.userId !== user?.uid && !data.isPublic) {
+        if (data.userId !== user.uid && !data.isPublic) {
           setError('No tienes permiso para acceder a este proyecto.');
           return;
         }
+
         setProject(data);
       } catch (err: any) {
         console.error('Error al cargar proyecto:', err);
-        setError(err?.message || 'Error desconocido al cargar el proyecto.');
+        setError('Error al cargar el proyecto. Por favor, inténtalo de nuevo.');
       } finally {
         setLoading(false);
       }
     };
 
-    if (user) fetchProject();
-    else setLoading(false);
-  }, [params.projectId, user, router]);
+    fetchProject();
+  }, [params.projectId, user]);
 
   const handleSave = async (canvasData: object, thumbnail: string) => {
     if (!project) return;
-    const blob = await (await fetch(thumbnail)).blob();
-    const file = new File([blob], `thumb_${project.id}.png`, { type: 'image/png' });
-    const thumbUrl = await uploadImage(file, `thumbnails/${project.id}/${Date.now()}.png`);
-    await updateProject(project.id, { canvasData, thumbnailUrl: thumbUrl } as any);
+    try {
+      const blob = await (await fetch(thumbnail)).blob();
+      const file = new File([blob], `thumb_${project.id}.png`, { type: 'image/png' });
+      const thumbUrl = await uploadImage(file, `thumbnails/${project.id}/${Date.now()}.png`);
+      await updateProject(project.id, { canvasData, thumbnailUrl: thumbUrl } as any);
+    } catch (err) {
+      console.error('Error al guardar:', err);
+      toast.error('No se pudo guardar el proyecto');
+    }
   };
 
   const handleTitleChange = async (title: string) => {
     if (!project) return;
-    setProject({ ...project, title });
-    await updateProject(project.id, { title } as any);
+    setProject(prev => prev ? { ...prev, title } : null);
+    try {
+      await updateProject(project.id, { title } as any);
+    } catch (err) {
+      console.error('Error al cambiar título:', err);
+      toast.error('No se pudo actualizar el título');
+    }
   };
 
   if (loading) return <LoadingSpinner />;
