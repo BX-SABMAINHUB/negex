@@ -56,31 +56,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = useCallback(async (email: string, password: string) => {
     await logIn(email, password);
-    // loading se pondrá en false cuando onAuthChange se dispare
   }, []);
 
   const signup = useCallback(async (email: string, password: string, username: string) => {
-    // 1. Crear usuario en Auth
     const fbUser = await signUp(email, password, username);
-    // 2. Intentar guardar en Firestore (no bloqueante)
     try {
-      await createUser(fbUser.uid, {
-        uid: fbUser.uid,
-        email,
-        username,
-        displayName: username,
-        avatarUrl: '',
-      });
+      await createUser(fbUser.uid, { uid: fbUser.uid, email, username, displayName: username, avatarUrl: '' });
     } catch (e) {
       console.warn('Documento en Firestore no creado, usando datos locales', e);
     }
-    // 3. Establecer estado inmediatamente para que la app sepa que ya estamos listos
     const localData = buildFallbackUser(fbUser);
     localData.username = username;
     localData.displayName = username;
     setUser(fbUser);
     setUserData(localData);
-    setLoading(false);               // <--- aquí se evita el "Cargando..." eterno
+    setLoading(false);
   }, []);
 
   const logout = useCallback(async () => {
