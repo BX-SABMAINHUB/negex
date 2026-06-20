@@ -8,12 +8,12 @@ import { PlantillaCategoria } from '@/types';
 export default function CategoryPlantillasPage() {
   const params = useParams();
   const category = params.category as PlantillaCategoria;
-  const { templates, loading } = useTemplates(category);
+  const { templates, loading, error, refetch } = useTemplates(category);
 
   return (
     <div className="space-y-6">
       <CategoryTabs />
-      <TemplateGrid templates={templates} loading={loading} />
+      <TemplateGrid templates={templates} loading={loading} error={error} onRetry={refetch} />
     </div>
   );
 }
