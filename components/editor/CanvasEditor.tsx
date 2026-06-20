@@ -15,11 +15,11 @@ import { ToolType } from '@/types';
 import { toast } from 'sonner';
 
 // ----------------------------------------------------------------
-// Tipos internos
+// Tipos y constantes
 // ----------------------------------------------------------------
 
 interface CanvasEditorProps {
-  initialData?: any;                     // JSON del lienzo (objeto o string)
+  initialData?: any;
   onSave: (json: object, thumbnail: string) => Promise<void>;
   width?: number;
   height?: number;
@@ -28,14 +28,53 @@ interface CanvasEditorProps {
   projectId: string;
 }
 
-// Lienzo vacío por defecto (Fabric v5)
-const EMPTY_CANVAS_JSON = {
+// Lienzo vacío que Fabric.js siempre puede cargar
+const BLANK_CANVAS = {
   version: '5.3.0',
   objects: [],
+  background: '#ffffff',
 };
 
 // ----------------------------------------------------------------
-// Componente principal
+// Validación segura de los datos del lienzo
+// ----------------------------------------------------------------
+
+function safeParseCanvasData(raw: any): object {
+  // Si ya es un objeto con la estructura esperada, lo devolvemos tal cual
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    typeof raw.version === 'string' &&
+    Array.isArray(raw.objects)
+  ) {
+    return raw;
+  }
+
+  // Si es un string, intentamos parsearlo
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        typeof parsed.version === 'string' &&
+        Array.isArray(parsed.objects)
+      ) {
+        return parsed;
+      }
+    } catch {
+      // Error de parseo → lienzo vacío
+    }
+  }
+
+  // Cualquier otro caso → lienzo vacío
+  return BLANK_CANVAS;
+}
+
+// ----------------------------------------------------------------
+// Componente CanvasEditor
 // ----------------------------------------------------------------
 
 export const CanvasEditor = ({
@@ -47,12 +86,10 @@ export const CanvasEditor = ({
   onTitleChange,
   projectId,
 }: CanvasEditorProps) => {
-  // Referencias
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<fabric.Canvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Estados de UI
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const [selectedObject, setSelectedObject] = useState<fabric.Object | null>(null);
   const [zoom, setZoom] = useState(100);
@@ -63,55 +100,15 @@ export const CanvasEditor = ({
   const [showExportModal, setShowExportModal] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Historial de acciones (deshacer/rehacer)
   const { pushState, undo, redo, canUndo, canRedo } = useCanvasHistory();
 
   // ----------------------------------------------------------------
-  // Validación segura de los datos iniciales
-  // ----------------------------------------------------------------
-  const parseInitialData = useCallback((raw: any): object => {
-    if (!raw) return EMPTY_CANVAS_JSON;
-
-    // Si es string, intentamos parsearlo como JSON
-    if (typeof raw === 'string') {
-      try {
-        const parsed = JSON.parse(raw);
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          !Array.isArray(parsed) &&
-          typeof parsed.version === 'string' &&
-          Array.isArray(parsed.objects)
-        ) {
-          return parsed;
-        }
-      } catch {
-        // Error de parseo → lienzo vacío
-      }
-      return EMPTY_CANVAS_JSON;
-    }
-
-    // Si es objeto, verificamos estructura mínima
-    if (
-      typeof raw === 'object' &&
-      !Array.isArray(raw) &&
-      typeof raw.version === 'string' &&
-      Array.isArray(raw.objects)
-    ) {
-      return raw;
-    }
-
-    // Cualquier otro caso → lienzo vacío
-    return EMPTY_CANVAS_JSON;
-  }, []);
-
-  // ----------------------------------------------------------------
-  // Inicialización del lienzo (Fabric.js v5)
+  // Inicialización del lienzo (solo una vez)
   // ----------------------------------------------------------------
   useEffect(() => {
     if (!canvasRef.current || fabricRef.current) return;
 
-    // 1. Crear el canvas
+    // Crear canvas
     const canvas = new fabric.Canvas(canvasRef.current, {
       width,
       height,
@@ -124,23 +121,24 @@ export const CanvasEditor = ({
 
     fabricRef.current = canvas;
 
-    // 2. Cargar datos iniciales de forma segura
-    const safeData = parseInitialData(initialData);
+    // Obtener datos seguros
+    const jsonToLoad = safeParseCanvasData(initialData);
+
+    // Cargar sin miedo a errores
     try {
-      canvas.loadFromJSON(safeData, () => {
+      canvas.loadFromJSON(jsonToLoad, () => {
         canvas.renderAll();
         pushState(JSON.stringify(canvas.toJSON()));
       });
     } catch (error) {
-      console.error('Error al cargar datos en el lienzo:', error);
-      // Incluso si falla loadFromJSON, tenemos el lienzo vacío
+      console.error('Error al cargar datos en el lienzo, usando vacío:', error);
       canvas.clear();
       canvas.backgroundColor = '#ffffff';
       canvas.renderAll();
       pushState(JSON.stringify(canvas.toJSON()));
     }
 
-    // 3. Eventos de selección
+    // Eventos de selección
     canvas.on('selection:created', (e) =>
       setSelectedObject(e.selected?.[0] || null)
     );
@@ -149,28 +147,24 @@ export const CanvasEditor = ({
     );
     canvas.on('selection:cleared', () => setSelectedObject(null));
 
-    // 4. Guardar estado tras modificaciones
+    // Guardar estado tras modificación
     canvas.on('object:modified', () => {
       pushState(JSON.stringify(canvas.toJSON()));
     });
 
-    // 5. Zoom con rueda del ratón
+    // Zoom con rueda del ratón
     canvas.on('mouse:wheel', (opt) => {
       const delta = opt.e.deltaY;
       let newZoom = canvas.getZoom() * (delta > 0 ? 0.95 : 1.05);
       newZoom = Math.min(Math.max(newZoom, 0.25), 4);
-      canvas.zoomToPoint(
-        { x: opt.e.offsetX, y: opt.e.offsetY },
-        newZoom
-      );
+      canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, newZoom);
       setZoom(Math.round(newZoom * 100));
       opt.e.preventDefault();
       opt.e.stopPropagation();
     });
 
-    // 6. Atajos de teclado globales
+    // Atajos de teclado globales
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Deshacer
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         const prev = undo();
@@ -180,7 +174,6 @@ export const CanvasEditor = ({
           } catch {}
         }
       }
-      // Rehacer
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
         e.preventDefault();
         const next = redo();
@@ -190,12 +183,10 @@ export const CanvasEditor = ({
           } catch {}
         }
       }
-      // Guardar
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         handleSave();
       }
-      // Eliminar selección
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const active = canvas.getActiveObject();
         if (active) {
@@ -209,19 +200,18 @@ export const CanvasEditor = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [width, height]); // ✅ Solo se recrea si cambian las dimensiones
+  }, [width, height]); // ✅ solo depende de dimensiones
 
   // ----------------------------------------------------------------
   // Funciones de manipulación del lienzo
   // ----------------------------------------------------------------
 
-  /** Añadir texto editable en el centro */
   const addText = () => {
     const canvas = fabricRef.current;
     if (!canvas) return;
     const text = new fabric.IText('Escribe aquí', {
-      left: (canvas.width ?? 1080) / 2 - 50,
-      top: (canvas.height ?? 1920) / 2 - 20,
+      left: canvas.width! / 2 - 50,
+      top: canvas.height! / 2 - 20,
       fontFamily: 'Inter',
       fontSize: 32,
       fill: '#000000',
@@ -232,14 +222,11 @@ export const CanvasEditor = ({
     canvas.renderAll();
   };
 
-  /** Añadir formas básicas */
   const addShape = (type: string) => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    const cw = canvas.width ?? 1080;
-    const ch = canvas.height ?? 1920;
-    const center = { left: cw / 2 - 50, top: ch / 2 - 50 };
     let shape: fabric.Object;
+    const center = { left: canvas.width! / 2 - 50, top: canvas.height! / 2 - 50 };
 
     switch (type) {
       case 'rect':
@@ -252,7 +239,7 @@ export const CanvasEditor = ({
         shape = new fabric.Triangle({ ...center, width: 100, height: 100, fill: '#10B981' });
         break;
       case 'line':
-        shape = new fabric.Line([50, 50, 200, 50], { stroke: '#000000', strokeWidth: 3 });
+        shape = new fabric.Line([50, 50, 200, 50], { stroke: '#000', strokeWidth: 3 });
         break;
       case 'star': {
         const points = [];
@@ -278,38 +265,26 @@ export const CanvasEditor = ({
     canvas.renderAll();
   };
 
-  /** Añadir imagen desde URL */
   const addImageFromURL = (url: string) => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    fabric.Image.fromURL(
-      url,
-      (img: fabric.Image) => {
-        if (!img) {
-          toast.error('No se pudo cargar la imagen');
-          return;
-        }
-        img.scaleToWidth(300);
-        img.set({
-          left: (canvas.width ?? 1080) / 2 - 150,
-          top: (canvas.height ?? 1920) / 2 - 150,
-        });
-        canvas.add(img);
-        canvas.setActiveObject(img);
-        pushState(JSON.stringify(canvas.toJSON()));
-        canvas.renderAll();
-      },
-      { crossOrigin: 'anonymous' }
-    );
+    fabric.Image.fromURL(url, (img: fabric.Image) => {
+      if (!img) return;
+      img.scaleToWidth(300);
+      img.set({ left: canvas.width! / 2 - 150, top: canvas.height! / 2 - 150 });
+      canvas.add(img);
+      canvas.setActiveObject(img);
+      pushState(JSON.stringify(canvas.toJSON()));
+      canvas.renderAll();
+    }, { crossOrigin: 'anonymous' });
   };
 
-  /** Insertar símbolo matemático o especial */
   const addSymbol = (symbol: string) => {
     const canvas = fabricRef.current;
     if (!canvas) return;
     const text = new fabric.IText(symbol, {
-      left: (canvas.width ?? 1080) / 2 - 20,
-      top: (canvas.height ?? 1920) / 2 - 20,
+      left: canvas.width! / 2 - 20,
+      top: canvas.height! / 2 - 20,
       fontFamily: 'Inter',
       fontSize: 48,
       fill: '#000000',
@@ -320,7 +295,6 @@ export const CanvasEditor = ({
     canvas.renderAll();
   };
 
-  /** Guardar proyecto */
   const handleSave = async () => {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -331,14 +305,13 @@ export const CanvasEditor = ({
       await onSave(json, thumbnail);
       toast.success('Proyecto guardado');
     } catch (error) {
-      console.error('Error al guardar:', error);
-      toast.error('Error al guardar el proyecto');
+      console.error(error);
+      toast.error('Error al guardar');
     } finally {
       setSaving(false);
     }
   };
 
-  /** Actualizar una propiedad del objeto seleccionado */
   const updateObjectProperty = (prop: string, value: any) => {
     const obj = fabricRef.current?.getActiveObject();
     if (!obj) return;
@@ -347,7 +320,6 @@ export const CanvasEditor = ({
     pushState(JSON.stringify(fabricRef.current?.toJSON()));
   };
 
-  /** Eliminar el objeto seleccionado */
   const deleteSelected = () => {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -366,7 +338,6 @@ export const CanvasEditor = ({
 
   return (
     <div className="flex h-screen flex-col bg-slate-100 dark:bg-slate-950">
-      {/* Barra de herramientas superior */}
       <Toolbar
         projectTitle={projectTitle}
         onTitleChange={onTitleChange}
@@ -374,7 +345,7 @@ export const CanvasEditor = ({
         onZoomChange={(z) => {
           const canvas = fabricRef.current;
           if (canvas) {
-            const c = canvas.getCenter(); // { left, top } en Fabric v5
+            const c = canvas.getCenter();
             canvas.zoomToPoint({ x: c.left, y: c.top }, z / 100);
             setZoom(z);
           }
@@ -415,24 +386,18 @@ export const CanvasEditor = ({
         onDelete={deleteSelected}
       />
 
-      {/* Área de trabajo + paneles laterales */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Lienzo */}
         <div className="flex-1 relative overflow-hidden" ref={containerRef}>
           <div className="absolute inset-0 flex items-center justify-center bg-[#e5e7eb] dark:bg-[#1e293b] bg-[radial-gradient(circle,#d1d5db_1px,transparent_1px)] dark:bg-[radial-gradient(circle,#334155_1px,transparent_1px)] bg-[size:20px_20px]">
             <div
               className="shadow-2xl"
-              style={{
-                transform: `scale(${zoom / 100})`,
-                transformOrigin: 'center',
-              }}
+              style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center' }}
             >
               <canvas ref={canvasRef} />
             </div>
           </div>
         </div>
 
-        {/* Paneles de propiedades y capas */}
         <div className="w-72 border-l bg-background overflow-y-auto flex flex-col">
           <PropertiesPanel
             selectedObject={selectedObject}
@@ -449,12 +414,8 @@ export const CanvasEditor = ({
         </div>
       </div>
 
-      {/* Modales y paneles flotantes */}
       {showSymbols && (
-        <SymbolPanel
-          onSelect={addSymbol}
-          onClose={() => setShowSymbols(false)}
-        />
+        <SymbolPanel onSelect={addSymbol} onClose={() => setShowSymbols(false)} />
       )}
 
       {showChartModal && (
@@ -462,9 +423,9 @@ export const CanvasEditor = ({
           onInsert={(chartData) => {
             const canvas = fabricRef.current;
             if (!canvas) return;
-            const text = new fabric.IText(`📊 ${chartData.type}`, {
-              left: (canvas.width ?? 1080) / 2 - 100,
-              top: (canvas.height ?? 1920) / 2 - 30,
+            const text = new fabric.IText('📊 Gráfico: ' + chartData.type, {
+              left: canvas.width! / 2 - 100,
+              top: canvas.height! / 2 - 30,
               fontSize: 24,
               fill: '#2563EB',
             });
@@ -484,8 +445,8 @@ export const CanvasEditor = ({
             const canvas = fabricRef.current;
             if (!canvas) return;
             const text = new fabric.IText('📋 Tabla de datos', {
-              left: (canvas.width ?? 1080) / 2 - 100,
-              top: (canvas.height ?? 1920) / 2 - 30,
+              left: canvas.width! / 2 - 100,
+              top: canvas.height! / 2 - 30,
               fontSize: 24,
               fill: '#06B6D4',
             });
@@ -507,10 +468,7 @@ export const CanvasEditor = ({
       )}
 
       {showExportModal && (
-        <ExportModal
-          canvas={fabricRef.current}
-          onClose={() => setShowExportModal(false)}
-        />
+        <ExportModal canvas={fabricRef.current} onClose={() => setShowExportModal(false)} />
       )}
     </div>
   );
