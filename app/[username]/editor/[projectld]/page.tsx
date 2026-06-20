@@ -10,11 +10,14 @@ import { Project } from '@/types';
 import { toast } from 'sonner';
 import { uploadImage } from '@/lib/storage';
 
-// Editor solo en cliente
+// El editor solo se carga en el cliente (sin SSR)
 const CanvasEditor = dynamic(
   () => import('@/components/editor/CanvasEditor').then(mod => mod.CanvasEditor),
   { ssr: false }
 );
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // milisegundos entre reintentos
 
 export default function EditorPage() {
   const params = useParams();
@@ -27,56 +30,57 @@ export default function EditorPage() {
 
   const projectId = params.projectId as string;
 
-  const fetchProject = useCallback(async () => {
-    // Si no hay usuario, esperar un poco y luego dar error si sigue sin estar
-    if (!user) {
-      // Pequeña espera por si el usuario está en proceso de login
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      if (!user) {
-        setError('No se ha podido autenticar. Vuelve a iniciar sesión.');
-        setLoading(false);
-        return;
+  // Función recursiva para obtener el proyecto con reintentos
+  const tryFetchProject = useCallback(
+    async (attempt = 1): Promise<Project> => {
+      try {
+        const data = await getProjectById(projectId);
+        if (!data) throw new Error('El proyecto no existe o fue eliminado.');
+        if (data.userId !== user?.uid && !data.isPublic) {
+          throw new Error('No tienes permiso para acceder a este proyecto.');
+        }
+        return data;
+      } catch (err: any) {
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          return tryFetchProject(attempt + 1);
+        }
+        // Agotados los reintentos, lanzamos el error real
+        throw err;
       }
+    },
+    [user, projectId]
+  );
+
+  const fetchProject = useCallback(async () => {
+    if (!user) {
+      setError('No has iniciado sesión.');
+      setLoading(false);
+      return;
     }
 
-    // Intentar cargar el proyecto con un timeout de seguridad (10 segundos máximo)
-    const timeout = new Promise<Project | null>((_, reject) =>
-      setTimeout(() => reject(new Error('Tiempo de espera agotado')), 10000)
-    );
-
     try {
-      const data = await Promise.race([getProjectById(projectId), timeout]);
-
-      if (!data) {
-        setError('El proyecto no existe o fue eliminado.');
-        return;
-      }
-
-      if (data.userId !== user!.uid && !data.isPublic) {
-        setError('No tienes permiso para acceder a este proyecto.');
-        return;
-      }
-
-      // Éxito
+      const data = await tryFetchProject();
       setProject(data);
       setError(null);
     } catch (err: any) {
       console.error('Error al cargar proyecto:', err);
-      setError(
-        err.message === 'permission-denied'
-          ? 'Error de permisos en la base de datos.'
-          : 'Error al cargar el proyecto. Por favor, inténtalo de nuevo.'
-      );
+      let mensaje = err.message || 'Error desconocido al cargar el proyecto.';
+      if (err.code === 'permission-denied')
+        mensaje = 'Error de permisos en la base de datos.';
+      if (mensaje.includes('Tiempo de espera'))
+        mensaje = 'El servidor tardó demasiado en responder.';
+      setError(mensaje);
     } finally {
       setLoading(false);
     }
-  }, [user, projectId]);
+  }, [user, tryFetchProject]);
 
   useEffect(() => {
     fetchProject();
   }, [fetchProject]);
 
-  // Guardar cambios
+  // Guardar el proyecto
   const handleSave = async (canvasData: object, thumbnail: string) => {
     if (!project) return;
     try {
@@ -91,7 +95,7 @@ export default function EditorPage() {
     }
   };
 
-  // Cambiar título
+  // Cambiar el título del proyecto
   const handleTitleChange = async (title: string) => {
     if (!project) return;
     setProject(prev => (prev ? { ...prev, title } : null));
@@ -103,7 +107,8 @@ export default function EditorPage() {
     }
   };
 
-  // Renderizado condicional
+  // --- Renderizado condicional ---
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -115,9 +120,9 @@ export default function EditorPage() {
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
-        <div className="text-center space-y-4 max-w-md">
+        <div className="text-center space-y-4 max-w-md px-4">
           <h2 className="text-2xl font-bold text-destructive">Error</h2>
-          <p className="text-muted-foreground">{error}</p>
+          <p className="text-muted-foreground whitespace-pre-wrap">{error}</p>
           <div className="flex gap-2 justify-center">
             <button
               onClick={() => router.push('/')}
@@ -137,7 +142,7 @@ export default function EditorPage() {
     );
   }
 
-  if (!project) return null; // Seguridad
+  if (!project) return null;
 
   // Dimensiones según tipo de plantilla
   const sizeMap: Record<string, { w: number; h: number }> = {
