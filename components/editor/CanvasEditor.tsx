@@ -36,47 +36,63 @@ const BLANK_CANVAS = {
 };
 
 // ----------------------------------------------------------------
-// Validación segura de los datos del lienzo
+// Función de saneamiento profundo del JSON del lienzo
 // ----------------------------------------------------------------
+function sanitizeCanvasData(raw: any): object {
+  if (!raw) return BLANK_CANVAS;
 
-function safeParseCanvasData(raw: any): object {
-  // Si ya es un objeto con la estructura esperada, lo devolvemos tal cual
-  if (
-    raw &&
-    typeof raw === 'object' &&
-    !Array.isArray(raw) &&
-    typeof raw.version === 'string' &&
-    Array.isArray(raw.objects)
-  ) {
-    return raw;
-  }
-
-  // Si es un string, intentamos parsearlo
+  // Parsear si es string
   if (typeof raw === 'string') {
     try {
-      const parsed = JSON.parse(raw);
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        !Array.isArray(parsed) &&
-        typeof parsed.version === 'string' &&
-        Array.isArray(parsed.objects)
-      ) {
-        return parsed;
-      }
+      raw = JSON.parse(raw);
     } catch {
-      // Error de parseo → lienzo vacío
+      return BLANK_CANVAS;
     }
   }
 
-  // Cualquier otro caso → lienzo vacío
-  return BLANK_CANVAS;
+  // Comprobar estructura mínima
+  if (
+    typeof raw !== 'object' ||
+    Array.isArray(raw) ||
+    typeof raw.version !== 'string' ||
+    !Array.isArray(raw.objects)
+  ) {
+    return BLANK_CANVAS;
+  }
+
+  // Sanear cada objeto del array
+  const cleanObjects = raw.objects
+    .filter((obj: any) => typeof obj === 'object' && typeof obj.type === 'string')
+    .map((obj: any) => {
+      const clean: any = { type: obj.type };
+      const allowedProps = [
+        'left', 'top', 'width', 'height', 'scaleX', 'scaleY',
+        'angle', 'opacity', 'fill', 'stroke', 'strokeWidth',
+        'fontFamily', 'fontSize', 'fontWeight', 'fontStyle',
+        'textAlign', 'lineHeight', 'underline', 'text',
+        'rx', 'ry', 'radius', 'points', 'x1', 'y1', 'x2', 'y2',
+        'selectable', 'evented', 'visible', 'lockMovementX',
+        'lockMovementY', 'lockRotation', 'lockScalingX',
+        'lockScalingY', 'shadow', 'src', 'filters', 'version',
+      ];
+      for (const key of Object.keys(obj)) {
+        if (allowedProps.includes(key) || key.startsWith('_')) {
+          clean[key] = obj[key];
+        }
+      }
+      return clean;
+    });
+
+  return {
+    version: String(raw.version),
+    objects: cleanObjects,
+    background: typeof raw.background === 'string' ? raw.background : '#ffffff',
+  };
 }
 
 // ----------------------------------------------------------------
 // Componente CanvasEditor
 // ----------------------------------------------------------------
-
 export const CanvasEditor = ({
   initialData,
   onSave,
@@ -99,58 +115,56 @@ export const CanvasEditor = ({
   const [showImageModal, setShowImageModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [saving, setSaving] = useState(false);
-
+  const [canvasError, setCanvasError] = useState<string | null>(null);
   const { pushState, undo, redo, canUndo, canRedo } = useCanvasHistory();
 
   // ----------------------------------------------------------------
-  // Inicialización del lienzo (solo una vez)
+  // Inicialización robusta del lienzo
   // ----------------------------------------------------------------
   useEffect(() => {
     if (!canvasRef.current || fabricRef.current) return;
 
-    // Crear canvas
-    const canvas = new fabric.Canvas(canvasRef.current, {
-      width,
-      height,
-      backgroundColor: '#ffffff',
-      preserveObjectStacking: true,
-      selection: true,
-      stopContextMenu: true,
-      fireRightClick: true,
-    });
-
-    fabricRef.current = canvas;
-
-    // Obtener datos seguros
-    const jsonToLoad = safeParseCanvasData(initialData);
-
-    // Cargar sin miedo a errores
+    let canvas: fabric.Canvas;
     try {
-      canvas.loadFromJSON(jsonToLoad, () => {
+      canvas = new fabric.Canvas(canvasRef.current, {
+        width,
+        height,
+        backgroundColor: '#ffffff',
+        preserveObjectStacking: true,
+        selection: true,
+        stopContextMenu: true,
+        fireRightClick: true,
+      });
+      fabricRef.current = canvas;
+    } catch (err: any) {
+      console.error('No se pudo crear el lienzo:', err);
+      setCanvasError('No se pudo crear el lienzo. Verifica que Fabric.js esté instalado correctamente.');
+      return;
+    }
+
+    // Obtener datos limpios y seguros
+    const cleanData = sanitizeCanvasData(initialData);
+
+    // Cargar con manejo de errores exhaustivo
+    try {
+      canvas.loadFromJSON(cleanData, () => {
         canvas.renderAll();
         pushState(JSON.stringify(canvas.toJSON()));
       });
-    } catch (error) {
-      console.error('Error al cargar datos en el lienzo, usando vacío:', error);
+    } catch (err: any) {
+      console.warn('Error al cargar datos iniciales, usando lienzo vacío:', err);
       canvas.clear();
       canvas.backgroundColor = '#ffffff';
       canvas.renderAll();
       pushState(JSON.stringify(canvas.toJSON()));
+      toast.error('La plantilla tenía datos dañados. Se ha abierto un lienzo en blanco.');
     }
 
     // Eventos de selección
-    canvas.on('selection:created', (e) =>
-      setSelectedObject(e.selected?.[0] || null)
-    );
-    canvas.on('selection:updated', (e) =>
-      setSelectedObject(e.selected?.[0] || null)
-    );
+    canvas.on('selection:created', (e) => setSelectedObject(e.selected?.[0] || null));
+    canvas.on('selection:updated', (e) => setSelectedObject(e.selected?.[0] || null));
     canvas.on('selection:cleared', () => setSelectedObject(null));
-
-    // Guardar estado tras modificación
-    canvas.on('object:modified', () => {
-      pushState(JSON.stringify(canvas.toJSON()));
-    });
+    canvas.on('object:modified', () => pushState(JSON.stringify(canvas.toJSON())));
 
     // Zoom con rueda del ratón
     canvas.on('mouse:wheel', (opt) => {
@@ -210,8 +224,8 @@ export const CanvasEditor = ({
     const canvas = fabricRef.current;
     if (!canvas) return;
     const text = new fabric.IText('Escribe aquí', {
-      left: canvas.width! / 2 - 50,
-      top: canvas.height! / 2 - 20,
+      left: (canvas.width ?? 1080) / 2 - 50,
+      top: (canvas.height ?? 1920) / 2 - 20,
       fontFamily: 'Inter',
       fontSize: 32,
       fill: '#000000',
@@ -226,7 +240,7 @@ export const CanvasEditor = ({
     const canvas = fabricRef.current;
     if (!canvas) return;
     let shape: fabric.Object;
-    const center = { left: canvas.width! / 2 - 50, top: canvas.height! / 2 - 50 };
+    const center = { left: (canvas.width ?? 1080) / 2 - 50, top: (canvas.height ?? 1920) / 2 - 50 };
 
     switch (type) {
       case 'rect':
@@ -258,7 +272,6 @@ export const CanvasEditor = ({
       default:
         return;
     }
-
     canvas.add(shape);
     canvas.setActiveObject(shape);
     pushState(JSON.stringify(canvas.toJSON()));
@@ -269,9 +282,15 @@ export const CanvasEditor = ({
     const canvas = fabricRef.current;
     if (!canvas) return;
     fabric.Image.fromURL(url, (img: fabric.Image) => {
-      if (!img) return;
+      if (!img) {
+        toast.error('No se pudo cargar la imagen');
+        return;
+      }
       img.scaleToWidth(300);
-      img.set({ left: canvas.width! / 2 - 150, top: canvas.height! / 2 - 150 });
+      img.set({
+        left: (canvas.width ?? 1080) / 2 - 150,
+        top: (canvas.height ?? 1920) / 2 - 150,
+      });
       canvas.add(img);
       canvas.setActiveObject(img);
       pushState(JSON.stringify(canvas.toJSON()));
@@ -283,8 +302,8 @@ export const CanvasEditor = ({
     const canvas = fabricRef.current;
     if (!canvas) return;
     const text = new fabric.IText(symbol, {
-      left: canvas.width! / 2 - 20,
-      top: canvas.height! / 2 - 20,
+      left: (canvas.width ?? 1080) / 2 - 20,
+      top: (canvas.height ?? 1920) / 2 - 20,
       fontFamily: 'Inter',
       fontSize: 48,
       fill: '#000000',
@@ -305,8 +324,8 @@ export const CanvasEditor = ({
       await onSave(json, thumbnail);
       toast.success('Proyecto guardado');
     } catch (error) {
-      console.error(error);
-      toast.error('Error al guardar');
+      console.error('Error al guardar:', error);
+      toast.error('Error al guardar el proyecto');
     } finally {
       setSaving(false);
     }
@@ -336,6 +355,20 @@ export const CanvasEditor = ({
   // Render
   // ----------------------------------------------------------------
 
+  if (canvasError) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold text-destructive">Error del editor</h2>
+          <p className="text-muted-foreground">{canvasError}</p>
+          <button onClick={() => window.location.reload()} className="text-primary hover:underline">
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col bg-slate-100 dark:bg-slate-950">
       <Toolbar
@@ -356,9 +389,7 @@ export const CanvasEditor = ({
           const prev = undo();
           if (prev && fabricRef.current) {
             try {
-              fabricRef.current.loadFromJSON(JSON.parse(prev), () =>
-                fabricRef.current?.renderAll()
-              );
+              fabricRef.current.loadFromJSON(JSON.parse(prev), () => fabricRef.current?.renderAll());
             } catch {}
           }
         }}
@@ -366,9 +397,7 @@ export const CanvasEditor = ({
           const next = redo();
           if (next && fabricRef.current) {
             try {
-              fabricRef.current.loadFromJSON(JSON.parse(next), () =>
-                fabricRef.current?.renderAll()
-              );
+              fabricRef.current.loadFromJSON(JSON.parse(next), () => fabricRef.current?.renderAll());
             } catch {}
           }
         }}
@@ -414,9 +443,7 @@ export const CanvasEditor = ({
         </div>
       </div>
 
-      {showSymbols && (
-        <SymbolPanel onSelect={addSymbol} onClose={() => setShowSymbols(false)} />
-      )}
+      {showSymbols && <SymbolPanel onSelect={addSymbol} onClose={() => setShowSymbols(false)} />}
 
       {showChartModal && (
         <ChartModal
@@ -424,8 +451,8 @@ export const CanvasEditor = ({
             const canvas = fabricRef.current;
             if (!canvas) return;
             const text = new fabric.IText('📊 Gráfico: ' + chartData.type, {
-              left: canvas.width! / 2 - 100,
-              top: canvas.height! / 2 - 30,
+              left: (canvas.width ?? 1080) / 2 - 100,
+              top: (canvas.height ?? 1920) / 2 - 30,
               fontSize: 24,
               fill: '#2563EB',
             });
@@ -445,8 +472,8 @@ export const CanvasEditor = ({
             const canvas = fabricRef.current;
             if (!canvas) return;
             const text = new fabric.IText('📋 Tabla de datos', {
-              left: canvas.width! / 2 - 100,
-              top: canvas.height! / 2 - 30,
+              left: (canvas.width ?? 1080) / 2 - 100,
+              top: (canvas.height ?? 1920) / 2 - 30,
               fontSize: 24,
               fill: '#06B6D4',
             });
@@ -461,10 +488,7 @@ export const CanvasEditor = ({
       )}
 
       {showImageModal && (
-        <ImageSearchModal
-          onSelect={addImageFromURL}
-          onClose={() => setShowImageModal(false)}
-        />
+        <ImageSearchModal onSelect={addImageFromURL} onClose={() => setShowImageModal(false)} />
       )}
 
       {showExportModal && (
