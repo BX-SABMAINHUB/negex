@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fabric } from 'fabric';
 import { useCanvasHistory } from '@/hooks/useCanvasHistory';
 import { Toolbar } from './Toolbar';
@@ -28,20 +28,21 @@ interface CanvasEditorProps {
   projectId: string;
 }
 
-// Lienzo vacío que Fabric.js siempre puede cargar
+// Lienzo vacío ABSOLUTO que Fabric.js siempre puede cargar
 const BLANK_CANVAS = {
   version: '5.3.0',
   objects: [],
   background: '#ffffff',
 };
 
-// ----------------------------------------------------------------
-// Función de saneamiento profundo del JSON del lienzo
-// ----------------------------------------------------------------
-function sanitizeCanvasData(raw: any): object {
+/**
+ * Devuelve SIEMPRE un objeto que Fabric.js puede cargar sin error.
+ * Si los datos de entrada son corruptos, devuelve un lienzo vacío.
+ */
+function forceSafeCanvasData(raw: any): object {
   if (!raw) return BLANK_CANVAS;
 
-  // Parsear si es string
+  // Si es string, intentar parsear
   if (typeof raw === 'string') {
     try {
       raw = JSON.parse(raw);
@@ -50,49 +51,55 @@ function sanitizeCanvasData(raw: any): object {
     }
   }
 
-  // Comprobar estructura mínima
+  // Debe ser un objeto plano, con version string y objects array
   if (
     typeof raw !== 'object' ||
     Array.isArray(raw) ||
+    raw === null ||
     typeof raw.version !== 'string' ||
     !Array.isArray(raw.objects)
   ) {
     return BLANK_CANVAS;
   }
 
-  // Sanear cada objeto del array
+  // Limpiar cada objeto del array para eliminar propiedades no reconocidas
   const cleanObjects = raw.objects
-    .filter((obj: any) => typeof obj === 'object' && typeof obj.type === 'string')
+    .filter((obj: any) => obj && typeof obj === 'object' && typeof obj.type === 'string')
     .map((obj: any) => {
-      const clean: any = { type: obj.type };
-      const allowedProps = [
-        'left', 'top', 'width', 'height', 'scaleX', 'scaleY',
+      const clean: any = {};
+      const allowedKeys = [
+        'type', 'left', 'top', 'width', 'height', 'scaleX', 'scaleY',
         'angle', 'opacity', 'fill', 'stroke', 'strokeWidth',
         'fontFamily', 'fontSize', 'fontWeight', 'fontStyle',
         'textAlign', 'lineHeight', 'underline', 'text',
         'rx', 'ry', 'radius', 'points', 'x1', 'y1', 'x2', 'y2',
         'selectable', 'evented', 'visible', 'lockMovementX',
-        'lockMovementY', 'lockRotation', 'lockScalingX',
-        'lockScalingY', 'shadow', 'src', 'filters', 'version',
+        'lockMovementY', 'lockRotation', 'lockScalingX', 'lockScalingY',
+        'shadow', 'src', 'filters', 'version',
       ];
       for (const key of Object.keys(obj)) {
-        if (allowedProps.includes(key) || key.startsWith('_')) {
+        if (allowedKeys.includes(key) || key.startsWith('_')) {
           clean[key] = obj[key];
         }
+      }
+      // Si es texto, asegurar que text sea string
+      if ((clean.type === 'i-text' || clean.type === 'text') && typeof clean.text !== 'string') {
+        clean.text = '';
       }
       return clean;
     });
 
   return {
-    version: String(raw.version),
+    version: raw.version,
     objects: cleanObjects,
-    background: typeof raw.background === 'string' ? raw.background : '#ffffff',
+    background: raw.background || '#ffffff',
   };
 }
 
 // ----------------------------------------------------------------
 // Componente CanvasEditor
 // ----------------------------------------------------------------
+
 export const CanvasEditor = ({
   initialData,
   onSave,
@@ -115,12 +122,11 @@ export const CanvasEditor = ({
   const [showImageModal, setShowImageModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [canvasError, setCanvasError] = useState<string | null>(null);
+  const [canvasReady, setCanvasReady] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
   const { pushState, undo, redo, canUndo, canRedo } = useCanvasHistory();
 
-  // ----------------------------------------------------------------
-  // Inicialización robusta del lienzo
-  // ----------------------------------------------------------------
+  // Inicialización absolutamente segura
   useEffect(() => {
     if (!canvasRef.current || fabricRef.current) return;
 
@@ -137,27 +143,28 @@ export const CanvasEditor = ({
       });
       fabricRef.current = canvas;
     } catch (err: any) {
-      console.error('No se pudo crear el lienzo:', err);
-      setCanvasError('No se pudo crear el lienzo. Verifica que Fabric.js esté instalado correctamente.');
+      console.error('Error creando el canvas:', err);
+      setInitError('No se pudo crear el lienzo. Fabric.js no está disponible.');
       return;
     }
 
-    // Obtener datos limpios y seguros
-    const cleanData = sanitizeCanvasData(initialData);
+    const safeData = forceSafeCanvasData(initialData);
 
-    // Cargar con manejo de errores exhaustivo
+    // Cargar datos con protección total
     try {
-      canvas.loadFromJSON(cleanData, () => {
+      canvas.loadFromJSON(safeData, () => {
         canvas.renderAll();
         pushState(JSON.stringify(canvas.toJSON()));
+        setCanvasReady(true);
       });
     } catch (err: any) {
-      console.warn('Error al cargar datos iniciales, usando lienzo vacío:', err);
+      console.warn('Error en loadFromJSON, lienzo vacío:', err);
       canvas.clear();
       canvas.backgroundColor = '#ffffff';
       canvas.renderAll();
       pushState(JSON.stringify(canvas.toJSON()));
-      toast.error('La plantilla tenía datos dañados. Se ha abierto un lienzo en blanco.');
+      setCanvasReady(true);
+      toast.error('La plantilla tenía datos corruptos. Se abrió un lienzo en blanco.');
     }
 
     // Eventos de selección
@@ -177,24 +184,20 @@ export const CanvasEditor = ({
       opt.e.stopPropagation();
     });
 
-    // Atajos de teclado globales
+    // Atajos de teclado
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         const prev = undo();
         if (prev) {
-          try {
-            canvas.loadFromJSON(JSON.parse(prev), () => canvas.renderAll());
-          } catch {}
+          try { canvas.loadFromJSON(JSON.parse(prev), () => canvas.renderAll()); } catch {}
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
         e.preventDefault();
         const next = redo();
         if (next) {
-          try {
-            canvas.loadFromJSON(JSON.parse(next), () => canvas.renderAll());
-          } catch {}
+          try { canvas.loadFromJSON(JSON.parse(next), () => canvas.renderAll()); } catch {}
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -214,12 +217,11 @@ export const CanvasEditor = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [width, height]); // ✅ solo depende de dimensiones
+  }, [width, height]); // Solo depende de las dimensiones
 
   // ----------------------------------------------------------------
-  // Funciones de manipulación del lienzo
+  // Funciones de manipulación
   // ----------------------------------------------------------------
-
   const addText = () => {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -261,10 +263,7 @@ export const CanvasEditor = ({
         for (let i = 0; i < spikes * 2; i++) {
           const r = i % 2 === 0 ? outerR : innerR;
           const angle = (Math.PI / spikes) * i - Math.PI / 2;
-          points.push({
-            x: center.left + 50 + r * Math.cos(angle),
-            y: center.top + 50 + r * Math.sin(angle),
-          });
+          points.push({ x: center.left + 50 + r * Math.cos(angle), y: center.top + 50 + r * Math.sin(angle) });
         }
         shape = new fabric.Polygon(points, { fill: '#F59E0B' });
         break;
@@ -287,10 +286,7 @@ export const CanvasEditor = ({
         return;
       }
       img.scaleToWidth(300);
-      img.set({
-        left: (canvas.width ?? 1080) / 2 - 150,
-        top: (canvas.height ?? 1920) / 2 - 150,
-      });
+      img.set({ left: (canvas.width ?? 1080) / 2 - 150, top: (canvas.height ?? 1920) / 2 - 150 });
       canvas.add(img);
       canvas.setActiveObject(img);
       pushState(JSON.stringify(canvas.toJSON()));
@@ -352,18 +348,28 @@ export const CanvasEditor = ({
   };
 
   // ----------------------------------------------------------------
-  // Render
+  // Renderizado
   // ----------------------------------------------------------------
-
-  if (canvasError) {
+  if (initError) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="text-center space-y-4">
           <h2 className="text-2xl font-bold text-destructive">Error del editor</h2>
-          <p className="text-muted-foreground">{canvasError}</p>
+          <p className="text-muted-foreground">{initError}</p>
           <button onClick={() => window.location.reload()} className="text-primary hover:underline">
             Reintentar
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canvasReady) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-muted-foreground">Cargando editor...</p>
         </div>
       </div>
     );
@@ -388,17 +394,13 @@ export const CanvasEditor = ({
         onUndo={() => {
           const prev = undo();
           if (prev && fabricRef.current) {
-            try {
-              fabricRef.current.loadFromJSON(JSON.parse(prev), () => fabricRef.current?.renderAll());
-            } catch {}
+            try { fabricRef.current.loadFromJSON(JSON.parse(prev), () => fabricRef.current?.renderAll()); } catch {}
           }
         }}
         onRedo={() => {
           const next = redo();
           if (next && fabricRef.current) {
-            try {
-              fabricRef.current.loadFromJSON(JSON.parse(next), () => fabricRef.current?.renderAll());
-            } catch {}
+            try { fabricRef.current.loadFromJSON(JSON.parse(next), () => fabricRef.current?.renderAll()); } catch {}
           }
         }}
         onAddText={addText}
