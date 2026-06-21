@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, Component } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,43 +10,15 @@ import { Project } from '@/types';
 import { toast } from 'sonner';
 import { uploadImage } from '@/lib/storage';
 
-// Editor cargado solo en cliente (sin SSR)
+// Editor solo en el cliente
 const CanvasEditor = dynamic(
   () => import('@/components/editor/CanvasEditor').then(mod => mod.CanvasEditor),
   { ssr: false }
 );
 
-// Error boundary local para capturar crasheos del editor
-class EditorErrorBoundary extends Component<
-  { children: React.ReactNode },
-  { hasError: boolean; errorMsg: string }
-> {
-  state = { hasError: false, errorMsg: '' };
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, errorMsg: error.message || 'Error inesperado en el editor.' };
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex h-screen items-center justify-center bg-background">
-          <div className="text-center space-y-4">
-            <h2 className="text-2xl font-bold text-destructive">Error en el editor</h2>
-            <p className="text-muted-foreground">{this.state.errorMsg}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="text-primary hover:underline"
-            >
-              Reintentar
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 segundo
 
-// Página del editor
 export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
@@ -56,24 +28,21 @@ export default function EditorPage() {
   const [error, setError] = useState<string | null>(null);
   const projectId = params.projectId as string;
 
-  const MAX_RETRIES = 3;
-  const RETRY_DELAY = 1000; // 1 segundo
-
+  // Reintentar la carga varias veces (por latencia de Firestore)
   const tryFetchProject = useCallback(
     async (attempt = 1): Promise<Project> => {
       try {
         const data = await getProjectById(projectId);
         if (!data) throw new Error('El proyecto no existe o fue eliminado.');
-        if (data.userId !== user?.uid && !data.isPublic) {
+        if (data.userId !== user?.uid && !data.isPublic)
           throw new Error('No tienes permiso para acceder a este proyecto.');
-        }
         return data;
       } catch (err: any) {
         if (attempt < MAX_RETRIES) {
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
           return tryFetchProject(attempt + 1);
         }
-        throw err; // Agotados los reintentos
+        throw err;
       }
     },
     [user, projectId]
@@ -94,7 +63,6 @@ export default function EditorPage() {
       console.error('Error al cargar proyecto:', err);
       let mensaje = err.message || 'Error desconocido al cargar el proyecto.';
       if (err.code === 'permission-denied') mensaje = 'Error de permisos en la base de datos.';
-      if (mensaje.includes('Tiempo de espera')) mensaje = 'El servidor tardó demasiado en responder.';
       setError(mensaje);
     } finally {
       setLoading(false);
@@ -144,14 +112,9 @@ export default function EditorPage() {
         <div className="text-center space-y-4 max-w-md px-4">
           <h2 className="text-2xl font-bold text-destructive">Error</h2>
           <p className="text-muted-foreground whitespace-pre-wrap">{error}</p>
-          <div className="flex gap-2 justify-center">
-            <button onClick={() => router.push('/')} className="text-primary hover:underline">
-              Volver al inicio
-            </button>
-            <button onClick={() => window.location.reload()} className="text-primary hover:underline">
-              Reintentar
-            </button>
-          </div>
+          <button onClick={() => router.push('/')} className="text-primary hover:underline">
+            Volver al inicio
+          </button>
         </div>
       </div>
     );
@@ -170,16 +133,14 @@ export default function EditorPage() {
   const { w, h } = sizeMap[project.plantillaTipo] || { w: 1080, h: 1920 };
 
   return (
-    <EditorErrorBoundary>
-      <CanvasEditor
-        initialData={project.canvasData}
-        onSave={handleSave}
-        width={w}
-        height={h}
-        projectTitle={project.title}
-        onTitleChange={handleTitleChange}
-        projectId={project.id}
-      />
-    </EditorErrorBoundary>
+    <CanvasEditor
+      initialData={project.canvasData}
+      onSave={handleSave}
+      width={w}
+      height={h}
+      projectTitle={project.title}
+      onTitleChange={handleTitleChange}
+      projectId={project.id}
+    />
   );
 }
