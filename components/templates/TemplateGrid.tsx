@@ -47,7 +47,7 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
       });
 
       toast.success('Proyecto creado');
-      // Aumentamos el retardo a 1.2 segundos para asegurar que Firestore propague el documento
+      // Espera suficiente para que Firestore propague el documento
       setTimeout(() => {
         router.push(`/${username}/editor/${projectId}`);
       }, 1200);
