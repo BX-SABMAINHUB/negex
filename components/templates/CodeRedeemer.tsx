@@ -5,8 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
+import { createProject } from '@/lib/firestore';
 
 export const CodeRedeemer = () => {
+  const { user, userData } = useAuth();
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -15,27 +18,55 @@ export const CodeRedeemer = () => {
       toast.error('Introduce un código válido');
       return;
     }
+    if (!user) {
+      toast.error('Debes iniciar sesión para canjear un código');
+      return;
+    }
 
     setLoading(true);
-    // Esperar exactamente 5 segundos
+    // 1. Esperar exactamente 5 segundos
     await new Promise(resolve => setTimeout(resolve, 5000));
 
     try {
-      const redeem = (window as any).__redeemTemplateCode;
-      if (typeof redeem !== 'function') {
-        toast.error('El sistema de canje no está disponible. Recarga la página.');
-        setLoading(false);
+      // 2. Obtener el almacén de códigos
+      const store = (window as any).__templateCodeStore as Map<string, { template: any; timestamp: number }>;
+      const entry = store?.get(code.trim().toUpperCase());
+      if (!entry) {
+        toast.error('Código no válido o expirado');
         return;
       }
-      const success = await redeem(code.trim().toUpperCase());
-      if (success) {
-        setCode('');
-        // La redirección la maneja redeemCode
+      if (Date.now() - entry.timestamp > 10 * 60 * 1000) {
+        toast.error('El código ha expirado');
+        store.delete(code);
+        return;
       }
-      // Si no tiene éxito, redeem ya mostró toast
-    } catch (err) {
+
+      const template = entry.template;
+      const username = userData?.username || user.email?.split('@')[0] || 'usuario';
+
+      // 3. Crear proyecto público
+      const projectId = await createProject(user.uid, {
+        username,
+        title: `${template.name} - ${new Date().toLocaleDateString()}`,
+        plantillaTipo: template.category,
+        plantillaId: template.id,
+        canvasData: template.defaultCanvasData || { version: '5.3.0', objects: [], background: '#ffffff' },
+        thumbnailUrl: '',
+        isPublic: true,
+      });
+
+      // 4. Generar enlace
+      const link = `https://negex.vercel.app/negexusercontent/${projectId}`;
+      toast.success(`Proyecto creado. Enlace: ${link}`, { duration: 15000 });
+      await navigator.clipboard.writeText(link);
+      toast.info('Enlace copiado al portapapeles. Ábrelo en tu navegador.');
+
+      // 5. Limpiar código usado
+      store.delete(code);
+      setCode('');
+    } catch (err: any) {
       console.error(err);
-      toast.error('Error al canjear el código');
+      toast.error('Error al crear el proyecto');
     } finally {
       setLoading(false);
     }
