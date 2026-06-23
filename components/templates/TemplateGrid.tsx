@@ -1,10 +1,9 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Plantilla } from '@/types';
 import { TemplateCard } from './TemplateCard';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { createProject } from '@/lib/firestore';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -18,7 +17,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-// Almacén temporal de códigos (válido durante la sesión)
 const codeStore = new Map<string, { template: Plantilla; timestamp: number }>();
 
 function generateCode(category: string): string {
@@ -35,14 +33,19 @@ interface Props {
 }
 
 export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
-  const { user, userData } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
   const [selectedTemplate, setSelectedTemplate] = useState<Plantilla | null>(null);
   const [creating, setCreating] = useState(false);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__templateCodeStore = codeStore;
+    }
+  }, []);
+
   const openConfirm = (template: Plantilla) => {
     if (!user) {
-      toast.error('Debes iniciar sesión para crear un proyecto');
+      toast.error('Debes iniciar sesión');
       return;
     }
     setSelectedTemplate(template);
@@ -52,63 +55,16 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
     if (!selectedTemplate || !user) return;
     setCreating(true);
 
-    try {
-      const code = generateCode(selectedTemplate.category);
-      codeStore.set(code, { template: selectedTemplate, timestamp: Date.now() });
-      toast.success(`Tu código es: ${code}`, { duration: 10000 });
-      await navigator.clipboard.writeText(code);
-      toast.info('Código copiado al portapapeles', { duration: 3000 });
-      setSelectedTemplate(null);
-    } catch (err: any) {
-      console.error('Error al generar código:', err);
-      toast.error('Error al generar el código');
-    } finally {
-      setCreating(false);
-    }
+    const code = generateCode(selectedTemplate.category);
+    codeStore.set(code, { template: selectedTemplate, timestamp: Date.now() });
+
+    toast.success(`Tu código es: ${code}`, { duration: 10000 });
+    await navigator.clipboard.writeText(code);
+    toast.info('Código copiado al portapapeles');
+
+    setSelectedTemplate(null);
+    setCreating(false);
   };
-
-  // Función de canje (llamada desde CodeRedeemer)
-  const redeemCode = useCallback(async (code: string): Promise<boolean> => {
-    const entry = codeStore.get(code);
-    if (!entry) {
-      toast.error('Código no válido o expirado');
-      return false;
-    }
-    // Expira en 10 minutos
-    if (Date.now() - entry.timestamp > 10 * 60 * 1000) {
-      toast.error('El código ha expirado');
-      codeStore.delete(code);
-      return false;
-    }
-
-    const template = entry.template;
-    const username = userData?.username || user?.email?.split('@')[0] || 'usuario';
-
-    try {
-      const projectId = await createProject(user!.uid, {
-        username,
-        title: `${template.name} - ${new Date().toLocaleDateString()}`,
-        plantillaTipo: template.category,
-        plantillaId: template.id,
-        canvasData: template.defaultCanvasData || { version: '5.3.0', objects: [], background: '#ffffff' },
-        thumbnailUrl: '',
-        isPublic: false,
-      });
-
-      codeStore.delete(code);
-      router.push(`/${username}/editor/${projectId}`);
-      return true;
-    } catch (err: any) {
-      console.error('Error al crear proyecto:', err);
-      toast.error('Error al crear el proyecto');
-      return false;
-    }
-  }, [user, userData, router]);
-
-  // Exponer la función globalmente (temporal, para el CodeRedeemer)
-  if (typeof window !== 'undefined') {
-    (window as any).__redeemTemplateCode = redeemCode;
-  }
 
   if (loading) {
     return (
@@ -142,7 +98,7 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
         <p className="text-lg font-semibold mb-2">No hay plantillas disponibles</p>
-        <p className="text-sm">Crea una nueva con el botón + o importa plantillas en Firestore.</p>
+        <p className="text-sm">Crea una con el botón + o importa plantillas.</p>
       </div>
     );
   }
@@ -160,8 +116,7 @@ export const TemplateGrid = ({ templates, loading, error, onRetry }: Props) => {
           <DialogHeader>
             <DialogTitle>¿Usar esta plantilla?</DialogTitle>
             <DialogDescription>
-              Se generará un código para canjear la plantilla <strong>{selectedTemplate?.name}</strong>.
-              Deberás introducirlo en la sección de canje.
+              Recibirás un código para canjear la plantilla <strong>{selectedTemplate?.name}</strong>.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
