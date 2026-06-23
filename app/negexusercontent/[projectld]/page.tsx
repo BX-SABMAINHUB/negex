@@ -1,51 +1,67 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { useAuth } from '@/hooks/useAuth';
 import { getProjectById, updateProject } from '@/lib/firestore';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Project } from '@/types';
 import { toast } from 'sonner';
 import { uploadImage } from '@/lib/storage';
 
+// Carga dinámica del editor
 const CanvasEditor = dynamic(
   () => import('@/components/editor/CanvasEditor').then(mod => mod.CanvasEditor),
   { ssr: false }
 );
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000;
+
 export default function NegexUserContentPage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
   const projectId = params.projectId as string;
 
-  useEffect(() => {
-    if (!projectId) return;
+  // Obtener el proyecto (público)
+  const fetchProject = useCallback(async () => {
+    setLoading(true);
+    setError(null);
 
-    (async () => {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const data = await getProjectById(projectId);
-        if (!data) {
-          setError('Proyecto no encontrado.');
-          return;
-        }
-        if (data.userId !== user?.uid && !data.isPublic) {
-          setError('No tienes permiso para acceder a este proyecto.');
-          return;
-        }
+        if (!data) throw new Error('El proyecto no existe.');
+        if (!data.isPublic) throw new Error('El proyecto no es público.');
         setProject(data);
-      } catch (err) {
-        setError('Error al cargar el proyecto.');
-      } finally {
-        setLoading(false);
+        return; // éxito
+      } catch (err: any) {
+        console.error(`Intento ${attempt}:`, err);
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        } else {
+          setError(err.message || 'Error al cargar el proyecto.');
+        }
       }
-    })();
-  }, [projectId, user]);
+    }
+    setLoading(false);
+  }, [projectId]);
+
+  useEffect(() => {
+    fetchProject();
+  }, [fetchProject]);
+
+  // Activar un temporizador de seguridad para el editor
+  useEffect(() => {
+    if (!loading && project) {
+      const timer = setTimeout(() => setEditorReady(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, project]);
 
   const handleSave = async (canvasData: object, thumbnail: string) => {
     if (!project) return;
@@ -63,14 +79,18 @@ export default function NegexUserContentPage() {
   const handleTitleChange = async (title: string) => {
     if (!project) return;
     setProject(prev => prev ? { ...prev, title } : null);
-    try {
-      await updateProject(project.id, { title } as any);
-    } catch {
-      toast.error('No se pudo actualizar el título');
-    }
+    await updateProject(project.id, { title } as any);
   };
 
-  if (loading) return <LoadingSpinner />;
+  // Mostrar spinner solo los primeros segundos
+  if (loading || (!editorReady && !error)) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -84,6 +104,7 @@ export default function NegexUserContentPage() {
       </div>
     );
   }
+
   if (!project) return null;
 
   const sizeMap: Record<string, { w: number; h: number }> = {
